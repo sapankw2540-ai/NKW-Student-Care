@@ -268,6 +268,23 @@ export const appRouter = router({
       if (ctx.user.role === "viewer") {
         throw new TRPCError({ code: "FORBIDDEN", message: "คุณมีสิทธิ์ดูข้อมูลอย่างเดียว ไม่สามารถเช็คชื่อได้" });
       }
+
+      // --- Prevent Duplicate Save ---
+      const { data: existing } = await ctx.supabase
+        .from("attendance")
+        .select("id")
+        .eq("classroom_id", input.roomId)
+        .eq("date", input.date)
+        .eq("period_id", input.period)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        throw new TRPCError({ 
+          code: "FORBIDDEN", 
+          message: "ห้องเรียนนี้ได้มีการบันทึกการเช็คชื่อในระบบเรียบร้อยแล้ว และไม่อนุญาตให้บันทึกซ้ำตามนโยบายของระบบ" 
+        });
+      }
+
       try {
         // Find teacher ID
         const { data: teacher, error: teacherError } = await ctx.supabase
@@ -300,13 +317,13 @@ export const appRouter = router({
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: upsertError.message });
         }
 
-        // --- LINE Notify ---
+        // --- LINE Messaging API ---
         try {
-          const { data: config } = await ctx.supabase.from("school_config").select("line_token, school_name").eq("id", 1).single();
+          const { data: config } = await ctx.supabase.from("school_config").select("line_channel_access_token, line_target_id, school_name").eq("id", 1).single();
           const { data: room } = await ctx.supabase.from("classrooms").select("name").eq("id", input.roomId).single();
           const { data: period } = await ctx.supabase.from("periods").select("name").eq("id", input.period).single();
           
-          if (config?.line_token) {
+          if (config?.line_channel_access_token && config?.line_target_id) {
             const counts = { มา: 0, ขาด: 0, สาย: 0, ลา: 0, ป่วย: 0 };
             input.students.forEach(s => {
               if (s.status in counts) counts[s.status as keyof typeof counts]++;
@@ -316,20 +333,27 @@ export const appRouter = router({
               year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
             });
 
-            const message = `\nรายงานการเข้าร่วมกิจกรรม ${period?.name || input.period}\nชั้น ${room?.name || input.roomId} ประจำ${thaiDate}\nมา: ${counts.มา}\nขาด: ${counts.ขาด}\nสาย: ${counts.สาย}\nลา: ${counts.ลา}\nป่วย: ${counts.ป่วย}\nผู้บันทึก: ${teacher.name}`;
+            const message = `รายงานการเข้าร่วมกิจกรรม ${period?.name || input.period}\nชั้น ${room?.name || input.roomId} ประจำ${thaiDate}\nมา: ${counts.มา}\nขาด: ${counts.ขาด}\nสาย: ${counts.สาย}\nลา: ${counts.ลา}\nป่วย: ${counts.ป่วย}\nผู้บันทึก: ${teacher.name}`;
 
-            await fetch("https://notify-api.line.me/api/notify", {
+            await fetch("https://api.line.me/v2/bot/message/push", {
               method: "POST",
               headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": `Bearer ${config.line_token}`,
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${config.line_channel_access_token}`,
               },
-              body: new URLSearchParams({ message }).toString(),
+              body: JSON.stringify({
+                to: config.line_target_id,
+                messages: [
+                  {
+                    type: "text",
+                    text: message
+                  }
+                ]
+              }),
             });
           }
         } catch (lineErr) {
-          console.error("LINE Notify failed:", lineErr);
-          // Don't fail the whole request if LINE fails
+          console.error("LINE Messaging API failed:", lineErr);
         }
         
         return { success: true };
@@ -366,7 +390,8 @@ export const appRouter = router({
       academicYear: data.academic_year,
       version: data.version,
       schoolLogoUrl: data.logo_url,
-      lineToken: data.line_token,
+      lineChannelAccessToken: data.line_channel_access_token,
+      lineTargetId: data.line_target_id,
     };
   }),
 
@@ -378,7 +403,8 @@ export const appRouter = router({
       academicYear: z.string(),
       version: z.string(),
       schoolLogoUrl: z.string().optional(),
-      lineToken: z.string().optional(),
+      lineChannelAccessToken: z.string().optional(),
+      lineTargetId: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { error } = await ctx.supabase
@@ -390,7 +416,8 @@ export const appRouter = router({
           academic_year: input.academicYear,
           version: input.version,
           logo_url: input.schoolLogoUrl,
-          line_token: input.lineToken,
+          line_channel_access_token: input.lineChannelAccessToken,
+          line_target_id: input.lineTargetId,
         })
         .eq("id", 1);
       
@@ -573,6 +600,72 @@ export const appRouter = router({
           hasData
         };
       });
+    }),
+
+  sendDailySummary: adminProcedure
+    .input(z.object({ date: z.string(), period: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // 1. Get Config
+        const { data: config } = await ctx.supabase.from("school_config").select("*").eq("id", 1).single();
+        if (!config?.line_channel_access_token || !config?.line_target_id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "ยังไม่ได้ตั้งค่า LINE Messaging API ในเมนูตั้งค่า" });
+        }
+
+        // 2. Get Data
+        const { data: attendance, error: attError } = await ctx.supabase
+          .from("attendance")
+          .select("*")
+          .eq("date", input.date)
+          .filter(input.period ? "period_id" : "id", "is", input.period ? input.period : null);
+        
+        // Wait, filter logic for optional period
+        let query = ctx.supabase.from("attendance").select("*").eq("date", input.date);
+        if (input.period) query = query.eq("period_id", input.period);
+        const { data: attData, error: err } = await query;
+        if (err) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+
+        const counts = { มา: 0, ขาด: 0, สาย: 0, ลา: 0, ป่วย: 0 };
+        attData.forEach(a => {
+          if (a.status_name in counts) counts[a.status_name as keyof typeof counts]++;
+        });
+
+        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+        const thaiDate = new Date(input.date).toLocaleDateString('th-TH', { 
+          year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+        });
+
+        let periodName = "ภาพรวมทั้งวัน";
+        if (input.period) {
+          const { data: p } = await ctx.supabase.from("periods").select("name").eq("id", input.period).single();
+          periodName = p?.name || input.period;
+        }
+
+        const message = `\n📢 สรุปรายงานการเข้าร่วมกิจกรรม\n--------------------------\n📍 ${periodName}\n📅 ประจำ${thaiDate}\n\n✅ มาเรียน: ${counts.มา}\n❌ ขาดเรียน: ${counts.ขาด}\n⏰ มาสาย: ${counts.สาย}\n📝 ลากิจ: ${counts.ลา}\n🤒 ลาป่วย: ${counts.ป่วย}\n\n📊 รวมบันทึกแล้ว: ${total} รายการ\n--------------------------\nผู้รายงาน: นายธวัชชัย แก่นจักร์\nตำแหน่ง: ผู้ดูแลระบบ`;
+
+        const response = await fetch("https://api.line.me/v2/bot/message/push", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${config.line_channel_access_token}`,
+          },
+          body: JSON.stringify({
+            to: config.line_target_id,
+            messages: [{ type: "text", text: message }]
+          }),
+        });
+
+        if (!response.ok) {
+          const errBody = await response.text();
+          console.error("LINE API Error:", errBody);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "ส่งข้อมูลไปที่ LINE ไม่สำเร็จ" });
+        }
+
+        return { success: true };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+      }
     }),
   createTeacher: adminProcedure
     .input(z.object({

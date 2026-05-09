@@ -32,7 +32,8 @@ export default function SettingsScreen() {
   const [selectedTheme, setSelectedTheme] = useState<'orange' | 'blue' | 'green' | 'purple'>(config.themeColor);
   const [logoUrl, setLogoUrl] = useState(config.schoolLogoUrl || '');
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
-  const [lineToken, setLineToken] = useState(config.lineToken || '');
+  const [lineChannelAccessToken, setLineChannelAccessToken] = useState(config.lineChannelAccessToken || '');
+  const [lineTargetId, setLineTargetId] = useState(config.lineTargetId || '');
   
   // Modal states
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
@@ -73,7 +74,8 @@ export default function SettingsScreen() {
         version: version.trim(),
         themeColor: selectedTheme,
         schoolLogoUrl: finalLogoUrl || undefined,
-        lineToken: lineToken.trim(),
+        lineChannelAccessToken: lineChannelAccessToken.trim(),
+        lineTargetId: lineTargetId.trim(),
       });
       
       setLogoBase64(null);
@@ -217,20 +219,32 @@ export default function SettingsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>LINE Notify Token</Text>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
+              <Text style={styles.label}>LINE Messaging API</Text>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled, { height: 'auto', minHeight: 56, paddingVertical: 8 }]}>
                 <TextInput
-                  placeholder={isAdmin ? "กรอก Token จาก Line Notify" : "••••••••••••••••"}
-                  value={lineToken}
-                  onChangeText={setLineToken}
+                  placeholder={isAdmin ? "Channel Access Token" : "••••••••••••••••"}
+                  value={lineChannelAccessToken}
+                  onChangeText={setLineChannelAccessToken}
                   style={[styles.input, !isAdmin && styles.inputDisabled]}
                   placeholderTextColor="#A8A29E"
                   autoCapitalize="none"
                   secureTextEntry
                   editable={isAdmin}
+                  multiline={isAdmin}
                 />
               </View>
-              <Text style={styles.hint}>* {isAdmin ? "ใช้สำหรับส่งข้อความสรุปการเช็คชื่อเข้ากลุ่ม LINE" : "เฉพาะแอดมินเท่านั้นที่สามารถแก้ไขได้"}</Text>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled, { marginTop: 8 }]}>
+                <TextInput
+                  placeholder={isAdmin ? "Target ID (User/Group/Room)" : "••••••••••••••••"}
+                  value={lineTargetId}
+                  onChangeText={setLineTargetId}
+                  style={[styles.input, !isAdmin && styles.inputDisabled]}
+                  placeholderTextColor="#A8A29E"
+                  autoCapitalize="none"
+                  editable={isAdmin}
+                />
+              </View>
+              <Text style={styles.hint}>* {isAdmin ? "ใช้สำหรับส่งข้อความสรุปการเช็คชื่อผ่าน Messaging API" : "เฉพาะแอดมินเท่านั้นที่สามารถแก้ไขได้"}</Text>
             </View>
 
           </View>

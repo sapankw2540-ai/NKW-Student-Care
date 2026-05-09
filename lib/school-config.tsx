@@ -13,7 +13,8 @@ export interface SchoolConfig {
   schoolIconUrl?: string;
   developerName: string; // Hardcoded in UI, but kept in type
   themeColor: 'orange' | 'blue' | 'green' | 'purple';
-  lineToken?: string;
+  lineChannelAccessToken?: string;
+  lineTargetId?: string;
 }
 
 interface SchoolConfigContextType {
@@ -35,7 +36,8 @@ const DEFAULT_CONFIG: SchoolConfig = {
   version: 'v4.5.9',
   developerName: 'นายธวัชชัย แก่นจักร์ ครู โรงเรียนน้ำคำวิทยา',
   themeColor: 'orange',
-  lineToken: '',
+  lineChannelAccessToken: '',
+  lineTargetId: '',
 };
 
 export function SchoolConfigProvider({ children }: { children: React.ReactNode }) {
@@ -80,7 +82,8 @@ export function SchoolConfigProvider({ children }: { children: React.ReactNode }
         academicYear: dbConfig.academicYear,
         version: dbConfig.version,
         schoolLogoUrl: dbConfig.schoolLogoUrl,
-        lineToken: dbConfig.lineToken,
+        lineChannelAccessToken: dbConfig.lineChannelAccessToken,
+        lineTargetId: dbConfig.lineTargetId,
       };
       
       // Only update if changed to avoid loops
@@ -109,7 +112,8 @@ export function SchoolConfigProvider({ children }: { children: React.ReactNode }
           academicYear: newConfig.academicYear,
           version: newConfig.version,
           schoolLogoUrl: newConfig.schoolLogoUrl,
-          lineToken: newConfig.lineToken,
+          lineChannelAccessToken: newConfig.lineChannelAccessToken,
+          lineTargetId: newConfig.lineTargetId,
         });
       }
     } catch (error) {

@@ -250,6 +250,24 @@ export default function AdminScreen() {
     },
   });
 
+  const sendSummaryMutation = trpc.sendDailySummary.useMutation({
+    onSuccess: () => {
+      setLoadingStatus("success");
+      setLoadingMessage("ส่งสรุปรายงานเข้า LINE เรียบร้อยแล้ว");
+    },
+    onError: (e) => {
+      setLoadingStatus("error");
+      setLoadingMessage(e.message);
+    },
+  });
+
+  const handleSendSummary = (period?: string) => {
+    setLoadingStatus("loading");
+    setLoadingVisible(true);
+    setLoadingMessage("กำลังคำนวณและส่งสรุป...");
+    sendSummaryMutation.mutate({ date: recordsDate, period });
+  };
+
   // ===== Attendance Records =====
   // Get 30-day range for records
   const recordsEndDate = recordsDate;
@@ -887,6 +905,34 @@ export default function AdminScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* LINE Summary Section */}
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryHeader}>
+                <IconSymbol name="bell.fill" size={20} color="#16A34A" />
+                <Text style={styles.summaryTitle}>ส่งสรุปรายงานเข้า LINE</Text>
+              </View>
+              <View style={styles.summaryActions}>
+                <TouchableOpacity 
+                  style={[styles.summaryBtn, { backgroundColor: "#16A34A" }]} 
+                  onPress={() => handleSendSummary()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.summaryBtnText}>สรุปทั้งวัน</Text>
+                </TouchableOpacity>
+                {allPeriods.filter(p => p.status === 1).map(p => (
+                  <TouchableOpacity 
+                    key={p.id}
+                    style={[styles.summaryBtn, { backgroundColor: "#2563EB" }]} 
+                    onPress={() => handleSendSummary(p.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.summaryBtnText}>สรุป{p.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.summaryHint}>* ระบบจะส่งสถิติสรุปภาพรวมไปยัง LINE ตามข้อมูลวันที่เลือก</Text>
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
               <TouchableOpacity
                 style={[styles.filterChip, recordsRoomFilter === "all" && styles.filterChipActive]}
@@ -1377,5 +1423,49 @@ const styles = StyleSheet.create({
   editReasonInput: {
     marginTop: 8, borderWidth: 1.5, borderColor: "#E7E5E4", borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: "#1C1917",
+  },
+  // Summary Card Styles
+  summaryCard: {
+    backgroundColor: "#F0FDF4",
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+  },
+  summaryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#166534",
+  },
+  summaryActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  summaryBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  summaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  summaryHint: {
+    fontSize: 11,
+    color: "#166534",
+    marginTop: 8,
+    opacity: 0.7,
   },
 });
