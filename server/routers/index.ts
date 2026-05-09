@@ -299,6 +299,38 @@ export const appRouter = router({
           console.error("Attendance upsert error:", upsertError);
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: upsertError.message });
         }
+
+        // --- LINE Notify ---
+        try {
+          const { data: config } = await ctx.supabase.from("school_config").select("line_token, school_name").eq("id", 1).single();
+          const { data: room } = await ctx.supabase.from("classrooms").select("name").eq("id", input.roomId).single();
+          const { data: period } = await ctx.supabase.from("periods").select("name").eq("id", input.period).single();
+          
+          if (config?.line_token) {
+            const counts = { มา: 0, ขาด: 0, สาย: 0, ลา: 0, ป่วย: 0 };
+            input.students.forEach(s => {
+              if (s.status in counts) counts[s.status as keyof typeof counts]++;
+            });
+
+            const thaiDate = new Date(input.date).toLocaleDateString('th-TH', { 
+              year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+            });
+
+            const message = `\nรายงานการเข้าร่วมกิจกรรม ${period?.name || input.period}\nชั้น ${room?.name || input.roomId} ประจำ${thaiDate}\nมา: ${counts.มา}\nขาด: ${counts.ขาด}\nสาย: ${counts.สาย}\nลา: ${counts.ลา}\nป่วย: ${counts.ป่วย}\nผู้บันทึก: ${teacher.name}`;
+
+            await fetch("https://notify-api.line.me/api/notify", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": `Bearer ${config.line_token}`,
+              },
+              body: new URLSearchParams({ message }).toString(),
+            });
+          }
+        } catch (lineErr) {
+          console.error("LINE Notify failed:", lineErr);
+          // Don't fail the whole request if LINE fails
+        }
         
         return { success: true };
       } catch (err: any) {
@@ -334,6 +366,7 @@ export const appRouter = router({
       academicYear: data.academic_year,
       version: data.version,
       schoolLogoUrl: data.logo_url,
+      lineToken: data.line_token,
     };
   }),
 
@@ -345,6 +378,7 @@ export const appRouter = router({
       academicYear: z.string(),
       version: z.string(),
       schoolLogoUrl: z.string().optional(),
+      lineToken: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { error } = await ctx.supabase
@@ -356,6 +390,7 @@ export const appRouter = router({
           academic_year: input.academicYear,
           version: input.version,
           logo_url: input.schoolLogoUrl,
+          line_token: input.lineToken,
         })
         .eq("id", 1);
       

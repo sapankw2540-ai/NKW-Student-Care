@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { trpc } from './trpc';
+import { useTeacherAuth } from './teacher-auth';
 
 export interface SchoolConfig {
   schoolName: string;
@@ -12,6 +13,7 @@ export interface SchoolConfig {
   schoolIconUrl?: string;
   developerName: string; // Hardcoded in UI, but kept in type
   themeColor: 'orange' | 'blue' | 'green' | 'purple';
+  lineToken?: string;
 }
 
 interface SchoolConfigContextType {
@@ -33,6 +35,7 @@ const DEFAULT_CONFIG: SchoolConfig = {
   version: 'v4.5.9',
   developerName: 'นายธวัชชัย แก่นจักร์ ครู โรงเรียนน้ำคำวิทยา',
   themeColor: 'orange',
+  lineToken: '',
 };
 
 export function SchoolConfigProvider({ children }: { children: React.ReactNode }) {
@@ -77,6 +80,7 @@ export function SchoolConfigProvider({ children }: { children: React.ReactNode }
         academicYear: dbConfig.academicYear,
         version: dbConfig.version,
         schoolLogoUrl: dbConfig.schoolLogoUrl,
+        lineToken: dbConfig.lineToken,
       };
       
       // Only update if changed to avoid loops
@@ -88,24 +92,29 @@ export function SchoolConfigProvider({ children }: { children: React.ReactNode }
     }
   }, [dbConfig]);
 
+  const { teacher } = useTeacherAuth();
+
   const setConfig = async (newConfig: SchoolConfig) => {
     try {
       // Update local state and storage
       setConfigState(newConfig);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
 
-      // Update Database (Global settings only)
-      await updateDbMutation.mutateAsync({
-        schoolName: newConfig.schoolName,
-        province: newConfig.province || '',
-        semester: newConfig.semester,
-        academicYear: newConfig.academicYear,
-        version: newConfig.version,
-        schoolLogoUrl: newConfig.schoolLogoUrl,
-      });
+      // Update Database (Global settings only for admins)
+      if (teacher?.role === 'admin') {
+        await updateDbMutation.mutateAsync({
+          schoolName: newConfig.schoolName,
+          province: newConfig.province || '',
+          semester: newConfig.semester,
+          academicYear: newConfig.academicYear,
+          version: newConfig.version,
+          schoolLogoUrl: newConfig.schoolLogoUrl,
+          lineToken: newConfig.lineToken,
+        });
+      }
     } catch (error) {
       console.error('Failed to sync config with DB:', error);
-      throw error;
+      if (teacher?.role === 'admin') throw error;
     }
   };
 

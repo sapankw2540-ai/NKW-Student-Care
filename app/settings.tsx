@@ -7,6 +7,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getThemePalette, ThemePalette } from '@/constants/theme-palettes';
 import * as ImagePicker from 'expo-image-picker';
 import { trpc } from '@/lib/trpc';
+import { useTeacherAuth } from '@/lib/teacher-auth';
 import { LoadingModal, LoadingStatus } from '@/components/loading-modal';
 
 const THEME_COLORS = {
@@ -18,6 +19,8 @@ const THEME_COLORS = {
 
 export default function SettingsScreen() {
   const { config, setConfig } = useSchoolConfig();
+  const { teacher } = useTeacherAuth();
+  const isAdmin = teacher?.role === 'admin';
   const palette = getThemePalette(config.themeColor);
   const styles = useMemo(() => createStyles(palette), [palette]);
 
@@ -29,6 +32,7 @@ export default function SettingsScreen() {
   const [selectedTheme, setSelectedTheme] = useState<'orange' | 'blue' | 'green' | 'purple'>(config.themeColor);
   const [logoUrl, setLogoUrl] = useState(config.schoolLogoUrl || '');
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [lineToken, setLineToken] = useState(config.lineToken || '');
   
   // Modal states
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
@@ -69,6 +73,7 @@ export default function SettingsScreen() {
         version: version.trim(),
         themeColor: selectedTheme,
         schoolLogoUrl: finalLogoUrl || undefined,
+        lineToken: lineToken.trim(),
       });
       
       setLogoBase64(null);
@@ -120,7 +125,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>ข้อมูลพื้นฐาน</Text>
             
             <View style={styles.logoSection}>
-              <TouchableOpacity onPress={handlePickImage} activeOpacity={0.7} style={styles.logoContainer}>
+              <TouchableOpacity onPress={handlePickImage} activeOpacity={0.7} style={styles.logoContainer} disabled={!isAdmin}>
                 {logoUrl ? (
                   <Image source={{ uri: logoUrl }} style={styles.logoImage} />
                 ) : (
@@ -129,35 +134,39 @@ export default function SettingsScreen() {
                     <Text style={styles.logoPlaceholderText}>เลือกตราโรงเรียน</Text>
                   </View>
                 )}
-                <View style={styles.editBadge}>
-                  <IconSymbol name="pencil" size={12} color="#FFFFFF" />
-                </View>
+                {isAdmin && (
+                  <View style={styles.editBadge}>
+                    <IconSymbol name="pencil" size={12} color="#FFFFFF" />
+                  </View>
+                )}
               </TouchableOpacity>
               {logoBase64 && <Text style={styles.hint}>มีรูปภาพใหม่ที่ยังไม่ได้บันทึก</Text>}
             </View>
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>ชื่อโรงเรียน</Text>
-              <View style={styles.inputWrapper}>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
                 <TextInput
                   placeholder="กรุณากรอกชื่อโรงเรียน"
                   value={schoolName}
                   onChangeText={setSchoolName}
-                  style={styles.input}
+                  style={[styles.input, !isAdmin && styles.inputDisabled]}
                   placeholderTextColor="#A8A29E"
+                  editable={isAdmin}
                 />
               </View>
             </View>
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>จังหวัด</Text>
-              <View style={styles.inputWrapper}>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
                 <TextInput
                   placeholder="กรุณากรอกจังหวัด"
                   value={province}
                   onChangeText={setProvince}
-                  style={styles.input}
+                  style={[styles.input, !isAdmin && styles.inputDisabled]}
                   placeholderTextColor="#A8A29E"
+                  editable={isAdmin}
                 />
               </View>
             </View>
@@ -165,27 +174,29 @@ export default function SettingsScreen() {
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1 }]}>
                 <Text style={styles.label}>ภาคเรียนที่</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
                   <TextInput
                     placeholder="เช่น 1"
                     value={semester}
                     onChangeText={setSemester}
-                    style={styles.input}
+                    style={[styles.input, !isAdmin && styles.inputDisabled]}
                     placeholderTextColor="#A8A29E"
                     keyboardType="numeric"
+                    editable={isAdmin}
                   />
                 </View>
               </View>
               <View style={[styles.inputGroup, { flex: 1 }]}>
                 <Text style={styles.label}>ปีการศึกษา</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
                   <TextInput
                     placeholder="เช่น 2569"
                     value={academicYear}
                     onChangeText={setAcademicYear}
-                    style={styles.input}
+                    style={[styles.input, !isAdmin && styles.inputDisabled]}
                     placeholderTextColor="#A8A29E"
                     keyboardType="numeric"
+                    editable={isAdmin}
                   />
                 </View>
               </View>
@@ -193,15 +204,33 @@ export default function SettingsScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>เวอร์ชันระบบ</Text>
-              <View style={styles.inputWrapper}>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
                 <TextInput
                   placeholder="เช่น v4.5.9"
                   value={version}
                   onChangeText={setVersion}
-                  style={styles.input}
+                  style={[styles.input, !isAdmin && styles.inputDisabled]}
                   placeholderTextColor="#A8A29E"
+                  editable={isAdmin}
                 />
               </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>LINE Notify Token</Text>
+              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
+                <TextInput
+                  placeholder={isAdmin ? "กรอก Token จาก Line Notify" : "••••••••••••••••"}
+                  value={lineToken}
+                  onChangeText={setLineToken}
+                  style={[styles.input, !isAdmin && styles.inputDisabled]}
+                  placeholderTextColor="#A8A29E"
+                  autoCapitalize="none"
+                  secureTextEntry
+                  editable={isAdmin}
+                />
+              </View>
+              <Text style={styles.hint}>* {isAdmin ? "ใช้สำหรับส่งข้อความสรุปการเช็คชื่อเข้ากลุ่ม LINE" : "เฉพาะแอดมินเท่านั้นที่สามารถแก้ไขได้"}</Text>
             </View>
 
           </View>
@@ -238,7 +267,9 @@ export default function SettingsScreen() {
           <View style={styles.infoCard}>
             <IconSymbol name="info.circle.fill" size={20} color={palette.primary} />
             <Text style={styles.infoText}>
-              ข้อมูลการตั้งค่าจะถูกส่งไปที่ฐานข้อมูลกลางเพื่อให้ทุกคนเห็นตรงกัน (ยกเว้นสีธีมที่จะเปลี่ยนเฉพาะเครื่องคุณ)
+              {isAdmin 
+                ? "ข้อมูลการตั้งค่าจะถูกส่งไปที่ฐานข้อมูลกลางเพื่อให้ทุกคนเห็นตรงกัน" 
+                : "คุณสามารถปรับเปลี่ยนสีธีมได้เฉพาะเครื่องของคุณเท่านั้น ส่วนข้อมูลโรงเรียนเฉพาะแอดมินที่มีสิทธิ์แก้ไข"}
             </Text>
           </View>
 
@@ -262,7 +293,7 @@ export default function SettingsScreen() {
             ) : (
               <>
                 <IconSymbol name="checkmark.circle.fill" size={18} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>บันทึกการตั้งค่า</Text>
+                <Text style={styles.saveButtonText}>{isAdmin ? "บันทึกการตั้งค่า" : "บันทึกสีธีม"}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -360,6 +391,13 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     fontSize: 16,
     color: '#1C1917',
     fontWeight: '500',
+  },
+  inputDisabled: {
+    color: '#A8A29E',
+  },
+  inputWrapperDisabled: {
+    backgroundColor: '#FAFAFA',
+    borderColor: '#F5F5F4',
   },
   hint: {
     fontSize: 12,
