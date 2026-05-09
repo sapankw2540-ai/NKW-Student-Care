@@ -148,7 +148,7 @@ export const appRouter = router({
           name: teacher.name,
           username: teacher.username,
           classroomIds: teacher.classroom_ids,
-          role: teacher.role as "teacher" | "admin",
+          role: teacher.role as "teacher" | "admin" | "viewer",
           notifyTime: teacher.notify_time,
         },
         token,
@@ -265,6 +265,9 @@ export const appRouter = router({
       })),
     }))
     .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role === "viewer") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "คุณมีสิทธิ์ดูข้อมูลอย่างเดียว ไม่สามารถเช็คชื่อได้" });
+      }
       try {
         // Find teacher ID
         const { data: teacher, error: teacherError } = await ctx.supabase
@@ -541,7 +544,7 @@ export const appRouter = router({
       name: z.string(),
       username: z.string(),
       password: z.string(),
-      role: z.enum(["teacher", "admin"]),
+      role: z.enum(["teacher", "admin", "viewer"]),
       classroomIds: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -565,7 +568,7 @@ export const appRouter = router({
       name: z.string(),
       username: z.string(),
       password: z.string().optional(),
-      role: z.enum(["teacher", "admin"]),
+      role: z.enum(["teacher", "admin", "viewer"]),
       classroomIds: z.string().optional(),
       notifyTime: z.string().optional(),
     }))

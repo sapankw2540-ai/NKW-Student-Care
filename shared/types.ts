@@ -13,7 +13,7 @@ export interface TeacherSession {
   name: string;
   username: string;
   classroomIds: string | null;
-  role: "teacher" | "admin";
+  role: "teacher" | "admin" | "viewer";
   notifyTime?: string | null;
 }
 

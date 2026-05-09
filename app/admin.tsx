@@ -27,13 +27,43 @@ import { Platform } from "react-native";
 
 type AdminTab = "teachers" | "periods" | "students" | "records";
 
+function normalizeHeader(value: unknown): string {
+  return String(value ?? "")
+    .replace(/\uFEFF/g, "") // BOM
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeCellText(value: unknown): string {
+  return String(value ?? "").replace(/\uFEFF/g, "").trim();
+}
+
+function parseClassroomId(value: unknown): string {
+  const raw = normalizeCellText(value);
+  if (!raw) return "";
+
+  const lower = raw.toLowerCase();
+  // already in canonical form like m1-1
+  if (/^m\d+-\d+$/.test(lower)) return lower;
+
+  // Thai display like "ม.1/1" or "ม.1/01"
+  const thaiMatch = lower.match(/^ม\.?\s*(\d+)\s*\/\s*(\d+)$/);
+  if (thaiMatch) return `m${Number(thaiMatch[1])}-${Number(thaiMatch[2])}`;
+
+  // Short like "1/1"
+  const shortMatch = lower.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (shortMatch) return `m${Number(shortMatch[1])}-${Number(shortMatch[2])}`;
+
+  return raw;
+}
+
 // ===== Teacher Form =====
 interface TeacherFormData {
   id?: number;
   name: string;
   username: string;
   password: string;
-  role: "teacher" | "admin";
+  role: "teacher" | "admin" | "viewer";
   classroomIds: string;
   notifyTime: string;
 }
@@ -266,7 +296,7 @@ export default function AdminScreen() {
       name: t.name,
       username: t.username,
       password: "",
-      role: t.role as "teacher" | "admin",
+      role: t.role as "teacher" | "admin" | "viewer",
       classroomIds: t.classroomIds ?? "",
     });
     setIsEditingTeacher(true);
@@ -332,7 +362,7 @@ export default function AdminScreen() {
             name: t.name,
             username: t.username,
             password: "123456",
-            role: t.role as "teacher" | "admin",
+            role: t.role as "teacher" | "admin" | "viewer",
             classroomIds: t.classroomIds || "",
           });
         },
@@ -446,18 +476,99 @@ export default function AdminScreen() {
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+        defval: "",
+        raw: false, // preserve displayed text (helps keep leading zeros)
+      }) as any[];
 
-      const studentsToImport = jsonData.map((row) => ({
-        studentId: String(row.studentId || row["รหัสนักเรียน"] || ""),
-        classroomId: String(row.classroomId || row["รหัสห้องเรียน"] || ""),
-        no: Number(row.no || row["เลขที่"] || 0),
-        name: String(row.name || row["ชื่อ-นามสกุล"] || ""),
-      })).filter(s => s.studentId && s.classroomId && s.name);
+      const defaultClassroomId = studentFilterRoom !== "all" ? studentFilterRoom : "";
+
+      const studentsToImportRaw = jsonData
+        .map((row, index) => {
+          const normalized: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(row ?? {})) {
+            const nk = normalizeHeader(k);
+            if (nk) normalized[nk] = v;
+          }
+
+          const studentId =
+            normalizeCellText(
+              normalized["studentid"] ??
+                normalized["student_id"] ??
+                normalized["รหัสนักเรียน"] ??
+                normalized["รหัสประจำตัวนักเรียน"] ??
+                normalized["เลขประจำตัวนักเรียน"] ??
+                normalized["เลขประจำตัว"] ??
+                ""
+            ) ||
+            // fallback: find a key that looks like student id
+            (() => {
+              const key = Object.keys(normalized).find((h) => h.includes("เลขประจำตัว") || h.includes("รหัสประจำตัว") || h.includes("student"));
+              return normalizeCellText(key ? normalized[key] : "");
+            })();
+
+          const noRaw =
+            normalized["no"] ??
+            normalized["เลขที่"] ??
+            normalized["ลำดับ"] ??
+            normalized["ลำดับที่"] ??
+            "";
+          const no = Number(String(noRaw).trim()) || 0;
+
+          const name =
+            normalizeCellText(
+              normalized["name"] ??
+                normalized["ชื่อ-นามสกุล"] ??
+                normalized["ชื่อ นามสกุล"] ??
+                normalized["ชื่อสกุล"] ??
+                normalized["ชื่อ-สกุล"] ??
+                normalized["ชื่อนามสกุล"] ??
+                normalized["ชื่อ"] ??
+                ""
+            ) ||
+            // fallback: find a key that looks like name
+            (() => {
+              const key = Object.keys(normalized).find((h) => h.includes("ชื่อ"));
+              return normalizeCellText(key ? normalized[key] : "");
+            })();
+
+          const classroomIdFromRow =
+            parseClassroomId(
+              normalized["classroomid"] ??
+                normalized["classroom_id"] ??
+                normalized["รหัสห้องเรียน"] ??
+                normalized["ห้องเรียน"] ??
+                normalized["ห้อง"] ??
+                ""
+            ) ||
+            // fallback: find a key that looks like classroom
+            (() => {
+              const key = Object.keys(normalized).find((h) => h.includes("ห้อง") || h.includes("classroom"));
+              return parseClassroomId(key ? normalized[key] : "");
+            })();
+
+          const classroomId = classroomIdFromRow || defaultClassroomId;
+
+          return { studentId, classroomId, no: no > 0 ? no : index + 1, name };
+        })
+        .filter((s) => s.studentId && s.classroomId && s.name);
+
+      // Dedupe by studentId (keep first occurrence)
+      const seen = new Set<string>();
+      const studentsToImport = studentsToImportRaw.filter((s) => {
+        const key = s.studentId.trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
       if (studentsToImport.length === 0) {
         setLoadingStatus("error");
-        setLoadingMessage("ไม่พบข้อมูลนักเรียนในไฟล์ (ตรวจสอบชื่อคอลัมน์)");
+        setLoadingMessage(
+          defaultClassroomId
+            ? "ไม่พบข้อมูลนักเรียนในไฟล์ (ตรวจสอบชื่อคอลัมน์ เช่น เลขประจำตัวนักเรียน/ชื่อ/เลขที่)"
+            : "ไม่พบข้อมูลนักเรียนในไฟล์ (ตรวจสอบชื่อคอลัมน์ และกรุณาเลือกห้องก่อนนำเข้า หรือใส่คอลัมน์ห้องเรียน/รหัสห้องเรียน)"
+        );
         return;
       }
 
@@ -603,9 +714,9 @@ export default function AdminScreen() {
                       <View style={styles.teacherDetails}>
                         <View style={styles.teacherNameRow}>
                           <Text style={styles.teacherName}>{item.name}</Text>
-                          <View style={[styles.roleBadge, item.role === "admin" && styles.roleBadgeAdmin]}>
-                            <Text style={[styles.roleBadgeText, item.role === "admin" && styles.roleBadgeTextAdmin]}>
-                              {item.role === "admin" ? "แอดมิน" : "ครู"}
+                          <View style={[styles.roleBadge, item.role === "admin" && styles.roleBadgeAdmin, item.role === "viewer" && { backgroundColor: "#F3F4F6" }]}>
+                            <Text style={[styles.roleBadgeText, item.role === "admin" && styles.roleBadgeTextAdmin, item.role === "viewer" && { color: "#78716C" }]}>
+                              {item.role === "admin" ? "แอดมิน" : item.role === "viewer" ? "ผู้เข้าชม" : "ครู"}
                             </Text>
                           </View>
                         </View>
@@ -884,9 +995,11 @@ export default function AdminScreen() {
             <View style={styles.formField}>
               <Text style={styles.formLabel}>บทบาท</Text>
               <View style={styles.roleRow}>
-                {(["teacher", "admin"] as const).map((r) => (
+                {(["teacher", "admin", "viewer"] as const).map((r) => (
                   <TouchableOpacity key={r} style={[styles.roleBtn, teacherForm.role === r && styles.roleBtnActive]} onPress={() => setTeacherForm((p) => ({ ...p, role: r }))} activeOpacity={0.8}>
-                    <Text style={[styles.roleBtnText, teacherForm.role === r && styles.roleBtnTextActive]}>{r === "admin" ? "ผู้ดูแลระบบ" : "ครู"}</Text>
+                    <Text style={[styles.roleBtnText, teacherForm.role === r && styles.roleBtnTextActive]}>
+                      {r === "admin" ? "ผู้ดูแลระบบ" : r === "viewer" ? "ผู้เข้าชม" : "ครู"}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>

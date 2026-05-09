@@ -224,12 +224,22 @@ export default function AttendanceScreen() {
           </View>
         )}
         <TouchableOpacity
-          style={[styles.checkButton, checked && styles.checkButtonEdit]}
+          style={[
+            styles.checkButton, 
+            checked && styles.checkButtonEdit,
+            teacher?.role === "viewer" && { backgroundColor: "#A8A29E" }
+          ]}
           onPress={() => openCheckModal(item)}
           activeOpacity={0.8}
         >
-          <IconSymbol name={checked ? "pencil" : "checkmark.circle.fill"} size={16} color="#FFFFFF" />
-          <Text style={styles.checkButtonText}>{checked ? "แก้ไขการเช็คชื่อ" : "เช็คชื่อ"}</Text>
+          <IconSymbol 
+            name={teacher?.role === "viewer" ? "eye.fill" : (checked ? "pencil" : "checkmark.circle.fill")} 
+            size={16} 
+            color="#FFFFFF" 
+          />
+          <Text style={styles.checkButtonText}>
+            {teacher?.role === "viewer" ? "ดูรายละเอียด" : (checked ? "แก้ไขการเช็คชื่อ" : "เช็คชื่อ")}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -335,25 +345,27 @@ export default function AttendanceScreen() {
             )}
           </View>
 
-          {/* Quick Select All */}
-          <View style={styles.quickSelectRow}>
-            <Text style={styles.quickSelectLabel}>เลือกทั้งหมด:</Text>
-            {STATUS_OPTIONS.map((s) => (
-              <TouchableOpacity
-                key={s.label}
-                style={[styles.quickSelectBtn, { backgroundColor: s.bg }]}
-                onPress={() => {
-                  const map: Record<string, StudentAttendanceEntry> = { ...studentStatuses };
-                  for (const st of roomStudents) {
-                    map[st.studentId] = { student_id: st.studentId, status: s.label, reason: studentStatuses[st.studentId]?.reason ?? "" };
-                  }
-                  setStudentStatuses(map);
-                }}
-              >
-                <Text style={[styles.quickSelectBtnText, { color: s.color }]}>{s.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Quick Select All (Hide for viewer) */}
+          {teacher?.role !== "viewer" && (
+            <View style={styles.quickSelectRow}>
+              <Text style={styles.quickSelectLabel}>เลือกทั้งหมด:</Text>
+              {STATUS_OPTIONS.map((s) => (
+                <TouchableOpacity
+                  key={s.label}
+                  style={[styles.quickSelectBtn, { backgroundColor: s.bg }]}
+                  onPress={() => {
+                    const map: Record<string, StudentAttendanceEntry> = { ...studentStatuses };
+                    for (const st of roomStudents) {
+                      map[st.studentId] = { student_id: st.studentId, status: s.label, reason: studentStatuses[st.studentId]?.reason ?? "" };
+                    }
+                    setStudentStatuses(map);
+                  }}
+                >
+                  <Text style={[styles.quickSelectBtnText, { color: s.color }]}>{s.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Student count info */}
           {searchQuery.trim() ? (
@@ -391,7 +403,8 @@ export default function AttendanceScreen() {
                                 styles.statusBtn,
                                 { backgroundColor: currentStatus === s.label ? s.bg : "#F3F4F6" },
                               ]}
-                              onPress={() => setStudentStatus(item.studentId, s.label)}
+                              onPress={() => teacher?.role !== "viewer" && setStudentStatus(item.studentId, s.label)}
+                              disabled={teacher?.role === "viewer"}
                             >
                               <Text style={[styles.statusBtnText, { color: currentStatus === s.label ? s.color : "#6B7280" }]}>
                                 {s.label}
@@ -429,24 +442,26 @@ export default function AttendanceScreen() {
             />
           )}
 
-          {/* Save Button */}
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={[styles.saveButton, saveMutation.isPending && styles.saveButtonDisabled]}
-              onPress={handleSave}
-              disabled={saveMutation.isPending}
-              activeOpacity={0.8}
-            >
-              {saveMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <IconSymbol name="checkmark.circle.fill" size={18} color="#FFFFFF" />
-                  <Text style={styles.saveButtonText}>บันทึกการเช็คชื่อ</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
+          {/* Save Button (Hide for viewer) */}
+          {teacher?.role !== "viewer" && (
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.saveButton, saveMutation.isPending && styles.saveButtonDisabled]}
+                onPress={handleSave}
+                disabled={saveMutation.isPending}
+                activeOpacity={0.8}
+              >
+                {saveMutation.isPending ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <IconSymbol name="checkmark.circle.fill" size={18} color="#FFFFFF" />
+                    <Text style={styles.saveButtonText}>บันทึกการเช็คชื่อ</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </Modal>
 

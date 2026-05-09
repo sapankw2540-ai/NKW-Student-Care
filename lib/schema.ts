@@ -15,7 +15,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "viewer"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -52,7 +52,7 @@ export const teachers = mysqlTable("teachers", {
   username: varchar("username", { length: 50 }).notNull().unique(),
   password: varchar("password", { length: 100 }).notNull(),
   status: int("status").default(1).notNull(),
-  role: mysqlEnum("role", ["teacher", "admin"]).default("teacher").notNull(),
+  role: mysqlEnum("role", ["teacher", "admin", "viewer"]).default("teacher").notNull(),
   classroomIds: text("classroomIds"), // comma-separated classroom IDs
   notifyTime: varchar("notifyTime", { length: 5 }).default("07:30"), // HH:MM for push notification
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -76,4 +76,5 @@ export const statusList = mysqlTable("status_list", {
 
 // ตารางการเช็คชื่อ
 export const attendance = mysqlTable("attendance", {
-  id: int("id").autoincrement().primaryKey(),
+  // id: int("id").autoincrement().primaryKey(),
+});

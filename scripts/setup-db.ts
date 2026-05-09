@@ -93,7 +93,7 @@ async function setup() {
         province VARCHAR(100) DEFAULT 'จังหวัดศรีสะเกษ',
         semester VARCHAR(10) DEFAULT '1',
         academic_year VARCHAR(10) DEFAULT '2569',
-        version VARCHAR(20) DEFAULT 'v1.0.0',
+        version VARCHAR(20) DEFAULT 'v4.5.9',
         logo_url TEXT,
         CONSTRAINT single_row CHECK (id = 1)
       )
@@ -164,7 +164,7 @@ async function setup() {
     `;
     await sql`
       INSERT INTO school_config (id, school_name, province, semester, academic_year, version) 
-      VALUES (1, 'โรงเรียนน้ำคำวิทยา', 'จังหวัดศรีสะเกษ', '1', '2569', 'v1.0.0')
+      VALUES (1, 'โรงเรียนน้ำคำวิทยา', 'จังหวัดศรีสะเกษ', '1', '2569', 'v4.5.9')
       ON CONFLICT (id) DO NOTHING
     `;
 

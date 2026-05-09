@@ -195,7 +195,7 @@ export default function SettingsScreen() {
               <Text style={styles.label}>เวอร์ชันระบบ</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  placeholder="เช่น v1.0.0"
+                  placeholder="เช่น v4.5.9"
                   value={version}
                   onChangeText={setVersion}
                   style={styles.input}

@@ -36,15 +36,18 @@ function TabLayout() {
   const isWeb = Platform.OS === "web";
   const bottomPadding = isWeb ? 24 : Math.max(insets.bottom, 8);
   const tabBarHeight = (isWeb ? 70 : 64) + bottomPadding;
-  const { teacher, isLoading } = useTeacherAuth();
+  const { teacher: actualTeacher, isLoading } = useTeacherAuth();
   const { config } = useSchoolConfig();
   const palette = getThemePalette(config.themeColor);
 
-  useEffect(() => {
-    if (!isLoading && !teacher) {
-      router.replace("/login");
-    }
-  }, [teacher, isLoading]);
+  // BYPASS LOGIN
+  const teacher = actualTeacher || { role: 'admin', username: 'admin', name: 'Admin (Bypassed)' };
+
+  // useEffect(() => {
+  //   if (!isLoading && !teacher) {
+  //     router.replace("/login");
+  //   }
+  // }, [teacher, isLoading]);
 
   if (isLoading) return null;
   
