@@ -16,6 +16,7 @@ import { AppHeader } from "@/components/app-header";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTeacherAuth } from "@/lib/teacher-auth";
 import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 import { formatClassroomId } from "@/lib/thai-date";
 import { trpc } from "@/lib/trpc";
@@ -31,10 +32,8 @@ import { useAppAlert } from "@/components/app-alert-provider";
 export default function ProfileScreen() {
   const { config } = useSchoolConfig();
   const palette = getThemePalette(config.themeColor);
-  const styles = useMemo(() => createStyles(palette), [palette]);
-
+  const styles = React.useMemo(() => createStyles(palette), [palette]);
   const { teacher, setTeacher, logout } = useTeacherAuth();
-  const { config } = useSchoolConfig();
 
   const appAlert = useAppAlert();
   const [notifyEnabled, setNotifyEnabled] = useState(false);
@@ -255,20 +254,20 @@ export default function ProfileScreen() {
             <Text style={styles.sectionTitle}>การแจ้งเตือน</Text>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <IconSymbol name="bell.fill" size={18} color="#F97316" />
+                <IconSymbol name="bell.fill" size={18} color={palette.primary} />
                 <View>
                   <Text style={styles.settingLabel}>แจ้งเตือนก่อนเช็คชื่อ</Text>
                   <Text style={styles.settingDesc}>แจ้งเตือนทุกวันตามเวลาที่กำหนด</Text>
                 </View>
               </View>
               {checkingReminders || loadingNotify ? (
-                <ActivityIndicator size="small" color="#F97316" />
+                <ActivityIndicator size="small" color={palette.primary} />
               ) : (
                 <Switch
                   value={notifyEnabled}
                   onValueChange={handleToggleNotify}
-                  trackColor={{ false: "#E5E7EB", true: "#FED7AA" }}
-                  thumbColor={notifyEnabled ? "#F97316" : "#9CA3AF"}
+                  trackColor={{ false: "#E5E7EB", true: palette.border }}
+                  thumbColor={notifyEnabled ? palette.primary : "#9CA3AF"}
                 />
               )}
             </View>
@@ -281,7 +280,7 @@ export default function ProfileScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.timeInputText}>{notifyTime}</Text>
-                  <IconSymbol name="clock.fill" size={16} color="#F97316" />
+                  <IconSymbol name="clock.fill" size={16} color={palette.primary} />
                 </TouchableOpacity>
               </View>
             )}
@@ -296,7 +295,7 @@ export default function ProfileScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.settingInfo}>
-                <IconSymbol name="lock.fill" size={18} color="#F97316" />
+                <IconSymbol name="lock.fill" size={18} color={palette.primary} />
                 <View>
                   <Text style={styles.settingLabel}>เปลี่ยนรหัสผ่าน</Text>
                   <Text style={styles.settingDesc}>เปลี่ยนรหัสผ่านสำหรับการเข้าสู่ระบบ</Text>
@@ -337,10 +336,10 @@ export default function ProfileScreen() {
         />
       </ScreenContainer>
 
-      {/* Change Password Modal */}
+      {/* Change Password Modal - Using View instead of Modal to allow AppAlert to overlap on top */}
       {passModalVisible && (
         <View style={styles.absoluteOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>เปลี่ยนรหัสผ่านใหม่(อย่างน้อย 6 ตัว)</Text>
               
@@ -371,7 +370,7 @@ export default function ProfileScreen() {
                   <Text style={styles.cancelBtnText}>ยกเลิก</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={styles.submitBtn} 
+                  style={[styles.submitBtn, { backgroundColor: palette.primary }]} 
                   onPress={handleChangePassword}
                   disabled={isChangingPass}
                 >
@@ -390,13 +389,15 @@ export default function ProfileScreen() {
   );
 }
 
+
+
 const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   absoluteOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 999,
   },
-  modalContainer: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.5)", padding: 24 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
   modalContent: { backgroundColor: "#FFF", borderRadius: 24, padding: 24, gap: 16 },
   modalTitle: { fontSize: 20, fontWeight: "800", color: "#1C1917", textAlign: "center", marginBottom: 8 },
   formField: { gap: 8 },
@@ -417,7 +418,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     gap: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: palette.primary + "30",
+    borderColor: palette.border,
   },
   avatar: {
     width: 64,
@@ -432,7 +433,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   profileName: { fontSize: 18, fontWeight: "700", color: "#1C1917", marginBottom: 2 },
   profileUsername: { fontSize: 13, color: "#78716C", marginBottom: 6 },
   roleBadge: { alignSelf: "flex-start", backgroundColor: "#F3F4F6", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  roleBadgeAdmin: { backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.primary + "40" },
+  roleBadgeAdmin: { backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border },
   roleBadgeText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
   roleBadgeTextAdmin: { color: palette.primary },
   section: {
@@ -445,8 +446,8 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   sectionTitle: { fontSize: 14, fontWeight: "700", color: "#1C1917", marginBottom: 12 },
   roomsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  roomChip: { backgroundColor: "#FFF7ED", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#FED7AA" },
-  roomChipText: { fontSize: 13, fontWeight: "600", color: "#F97316" },
+  roomChip: { backgroundColor: palette.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: palette.border },
+  roomChipText: { fontSize: 13, fontWeight: "600", color: palette.primary },
   allRoomsText: { fontSize: 13, color: "#78716C" },
   settingRow: {
     flexDirection: "row",

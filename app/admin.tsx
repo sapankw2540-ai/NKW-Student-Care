@@ -17,15 +17,16 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { trpc } from "@/lib/trpc";
 import { useTeacherAuth } from "@/lib/teacher-auth";
 import { router } from "expo-router";
-import { formatClassroomId, formatClassroomIds, formatDateForApi, toThaiDateShort, toThaiDateNumeric } from "@/lib/thai-date";
+import { formatClassroomId, formatClassroomIds, formatDateForApi, toThaiDateShort, toThaiDateFull, toThaiDateNumeric, toThaiDateWithDay, THAI_MONTHS, THAI_SHORT_MONTHS } from "@/lib/thai-date";
 import { DatePickerModal } from "@/components/date-picker-modal";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
 import { useAppAlert } from "@/components/app-alert-provider";
-import { useSchoolConfig } from "@/lib/school-config";
-import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
-import * as DocumentPicker from "expo-document-picker";
 import * as XLSX from "xlsx";
+import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
+import { generateOfficialReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
+import { useSchoolConfig } from "@/lib/school-config";
 
 type AdminTab = "teachers" | "periods" | "students" | "records";
 
@@ -112,10 +113,9 @@ const STATUS_OPTIONS = [
 
 export default function AdminScreen() {
   const { config } = useSchoolConfig();
-  const palette = getThemePalette(config.themeColor);
-  const styles = useMemo(() => createStyles(palette), [palette]);
-
   const { teacher } = useTeacherAuth();
+  const palette = getThemePalette(config.themeColor);
+  const styles = React.useMemo(() => createStyles(palette), [palette]);
   const appAlert = useAppAlert();
   const [activeTab, setActiveTab] = useState<AdminTab>("teachers");
 
@@ -148,6 +148,16 @@ export default function AdminScreen() {
   const [summaryEndDate, setSummaryEndDate] = useState(formatDateForApi(new Date()));
   const [summaryPeriod, setSummaryPeriod] = useState<string | null>(null);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  // Print settings modal
+  const [printSettingsVisible, setPrintSettingsVisible] = useState(false);
+  const [printSettings, setPrintSettings] = useState({
+    refNo: "......./๒๕๖๙",
+    docDate: "",
+    semester: "๑",
+    academicYear: "๒๕๖๙",
+  });
+  const [pendingPrintData, setPendingPrintData] = useState<any>(null);
 
   // Loading modal state
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>("idle");
@@ -283,6 +293,188 @@ export default function AdminScreen() {
       endDate: summaryEndDate, 
       period: summaryPeriod || undefined 
     });
+  };
+
+  const handlePrintReport = async () => {
+    try {
+      setLoadingStatus("loading");
+      setLoadingVisible(true);
+      setLoadingMessage("กำลังเตรียมข้อมูลรายงาน...");
+      // Pre-fill default date
+      const thaiNow = toThaiDateFull(new Date());
+      setPrintSettings(prev => ({ ...prev, docDate: prev.docDate || thaiNow }));
+
+      // 1. Fetch frequent absentees (threshold 3 as default for "frequent")
+      const absentees = await utils.getFrequentAbsentees.fetch({
+        startDate: recordsDate,
+        endDate: summaryEndDate,
+        threshold: 1, // Get everyone who has at least 1 absence for the table
+      });
+
+      // 2. Fetch all stats for the range to build table 2
+      const stats = await utils.getAttendanceStats.fetch({
+        startDate: recordsDate,
+        endDate: summaryEndDate,
+      });
+
+      // 3. Process Table 2 (By classroom)
+      const roomSummaryMap: Record<string, { checkCount: number; absentCount: number }> = {};
+      classrooms.forEach(c => {
+        roomSummaryMap[c.id] = { checkCount: 0, absentCount: 0 };
+      });
+
+      stats.forEach(s => {
+        if (roomSummaryMap[s.classroom_id]) {
+          roomSummaryMap[s.classroom_id].checkCount++;
+          if (s.status_name === "ขาด") {
+            roomSummaryMap[s.classroom_id].absentCount++;
+          }
+        }
+      });
+
+      const table2Data = classrooms.map((c, i) => ({
+        no: i + 1,
+        room: c.name,
+        checkCount: roomSummaryMap[c.id].checkCount,
+        absentCount: roomSummaryMap[c.id].absentCount,
+      })).filter(r => r.checkCount > 0);
+
+      // 3. Process Chart Data
+      const gradeStats: Record<string, { present: number; absent: number; late: number; leave: number; sick: number; }> = {};
+      const trendMap: Record<string, { present: number; absent: number; }> = {};
+
+      stats.forEach(s => {
+        // Grade level detection (ม.1, ม.2, etc.)
+        const joinedName = (s as any).classrooms?.name;
+        const legacyName = (s as any).classroom_name;
+        const fallbackName = classrooms.find(c => c.id === s.classroom_id)?.name;
+        
+        const rawName = joinedName || legacyName || fallbackName || "";
+        
+        let grade = "อื่นๆ";
+        if (rawName.includes("/")) {
+          grade = rawName.split("/")[0];
+        } else if (rawName.startsWith("ม.")) {
+          // Handle case like "ม.1" or "ม.1-1"
+          grade = rawName.substring(0, 3);
+        } else if (rawName.length > 0) {
+          grade = rawName;
+        }
+
+        if (!gradeStats[grade]) {
+          gradeStats[grade] = { present: 0, absent: 0, late: 0, leave: 0, sick: 0 };
+        }
+        
+        // Status mapping
+        if (s.status_name === "มา") gradeStats[grade].present++;
+        else if (s.status_name === "ขาด") gradeStats[grade].absent++;
+        else if (s.status_name === "สาย") gradeStats[grade].late++;
+        else if (s.status_name === "ลา") gradeStats[grade].leave++;
+        else if (s.status_name === "ป่วย") gradeStats[grade].sick++;
+
+        // Trend data (date)
+        const d = s.date;
+        if (!trendMap[d]) trendMap[d] = { present: 0, absent: 0 };
+        if (s.status_name === "มา") trendMap[d].present++;
+        else if (s.status_name === "ขาด") trendMap[d].absent++;
+      });
+
+      const trendData = Object.keys(trendMap).sort().map(date => ({
+        date: toThaiDateShort(new Date(date + "T00:00:00")),
+        present: trendMap[date].present,
+        absent: trendMap[date].absent
+      }));
+
+      // 4. Process Table 1 (Students)
+      // We'll take the top 15 absentees or all from the frequent list
+      const table1Data = absentees.slice(0, 20).map((s, i) => {
+        // Find total check-ins for this student in range
+        const studentStats = stats.filter(st => st.student_id === s.studentId);
+        const totalChecked = studentStats.length;
+        return {
+          no: i + 1,
+          room: formatClassroomId(s.classroomId),
+          name: s.name,
+          absentCount: s.count,
+          checkCount: totalChecked,
+          percentage: totalChecked > 0 ? ((s.count / totalChecked) * 100).toFixed(2) : "0.00",
+        };
+      });
+
+      // 5. Build Report Data
+      const startObj = new Date(recordsDate + "T00:00:00");
+      const endObj = new Date(summaryEndDate + "T00:00:00");
+      
+      const startDay = startObj.getDate();
+      const startMonth = THAI_MONTHS[startObj.getMonth()];
+      const startYear = startObj.getFullYear() + 543;
+      
+      const endDay = endObj.getDate();
+      const endMonth = THAI_MONTHS[endObj.getMonth()];
+      const endYear = endObj.getFullYear() + 543;
+
+      let dateRangeStr = "";
+      if (recordsDate === summaryEndDate) {
+        dateRangeStr = `${startDay} ${startMonth} ${startYear}`;
+      } else if (startMonth === endMonth && startYear === endYear) {
+        dateRangeStr = `${startDay} – ${endDay} ${startMonth} ${startYear}`;
+      } else if (startYear === endYear) {
+        dateRangeStr = `${startDay} ${THAI_SHORT_MONTHS[startObj.getMonth()]} – ${endDay} ${THAI_SHORT_MONTHS[endObj.getMonth()]} ${startYear}`;
+      } else {
+        dateRangeStr = `${startDay} ${THAI_SHORT_MONTHS[startObj.getMonth()]} ${startYear} – ${endDay} ${THAI_SHORT_MONTHS[endObj.getMonth()]} ${endYear}`;
+      }
+
+      // Save pending data then show settings modal
+      setPendingPrintData({ table1Data, table2Data, dateRangeStr, gradeStats, trendData });
+      setLoadingVisible(false);
+      setLoadingStatus("idle");
+      setPrintSettingsVisible(true);
+    } catch (err: any) {
+      console.error("Print report error:", err);
+      setLoadingStatus("error");
+      setLoadingMessage("ไม่สามารถสร้างรายงานได้: " + err.message);
+    }
+  };
+
+  const handleConfirmPrint = async () => {
+    if (!pendingPrintData) return;
+    try {
+      setPrintSettingsVisible(false);
+      setLoadingStatus("loading");
+      setLoadingVisible(true);
+      setLoadingMessage("กำลังสร้างรายงาน...");
+      const { table1Data, table2Data, dateRangeStr, gradeStats, trendData } = pendingPrintData;
+      const reportData = {
+        department: `กลุ่มบริหารกิจการนักเรียน ${config.schoolName || "โรงเรียนน้ำคำวิทยา"}`,
+        refNo: printSettings.refNo || "......./๒๕๖๙",
+        date: printSettings.docDate || toThaiDateNumeric(new Date()),
+        subject: `รายงานผลสถิติการเข้าร่วมกิจกรรมหน้าเสาธงและกิจกรรมก่อนเรียนคาบบ่าย ประจำวันที่ ${dateRangeStr}`,
+        to: "ผู้อำนวยการโรงเรียนน้ำคำวิทยา",
+        attachments: "สรุปสถิติการเข้าร่วมกิจกรรมหน้าเสาธงและกิจกรรมก่อนเรียนคาบบ่าย จำนวน ๑ ชุด",
+        bodyText: `ด้วยกลุ่มบริหารกิจการนักเรียน ได้จัดทำแบบสถิติการร่วมกิจกรรมหน้าเสาธงและกิจกรรมก่อนเรียนคาบบ่ายของนักเรียน ตามระบบการดูแลช่วยเหลือนักเรียน ระหว่างวันที่ ${dateRangeStr} จากข้อมูลนักเรียนระดับชั้นมัธยมศึกษาปีที่ ๑ ถึง ระดับชั้นมัธยมศึกษาปีที่ ๖ ภาคเรียนที่ ${printSettings.semester} ปีการศึกษา ${printSettings.academicYear}`,
+        reporters: [
+          { name: teacher?.name || "............................................", position: "ผู้รายงาน" },
+          { name: "นายกัมปนาท คันศร", position: "หัวหน้ากลุ่มบริหารกิจการนักเรียน" }
+        ],
+        director: {
+          name: "นางสาววลัยลักษณ์ หาญสิงห์",
+          position: "รองผู้อำนวยการโรงเรียนน้ำคำวิทยา"
+        },
+        table1: table1Data,
+        table2: table2Data,
+        dateRange: dateRangeStr,
+        gradeStats,
+        trendData,
+        logoUrl: config.logoUrl || "https://www.thailibrary.in.th/wp-content/uploads/2013/04/482457_10200601494981789_1825578775_n.jpg"
+      };
+      const html = generateOfficialReportHtml(reportData);
+      await exportPdfAndShare(html, `รายงานสถิติ_${recordsDate}.pdf`);
+      setLoadingStatus("success");
+      setLoadingMessage("สร้างรายงานเรียบร้อยแล้ว");
+    } catch (err: any) {
+      setLoadingStatus("error");
+      setLoadingMessage("ไม่สามารถสร้างรายงานได้: " + err.message);
+    }
   };
 
   // ===== Attendance Records =====
@@ -735,7 +927,7 @@ export default function AdminScreen() {
       <AppHeader title="ผู้ดูแลระบบ" />
       <ScreenContainer edges={[]} className="flex-1">
         {/* Tab bar */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBarScroll} contentContainerStyle={styles.tabBar}>
+        <View style={styles.tabBar}>
           {([
             { key: "teachers", label: "ผู้ใช้งาน", icon: "person.fill" },
             { key: "students", label: "นักเรียน", icon: "graduationcap.fill" },
@@ -748,13 +940,13 @@ export default function AdminScreen() {
               onPress={() => setActiveTab(tab.key)}
               activeOpacity={0.8}
             >
-              <IconSymbol name={tab.icon} size={15} color={activeTab === tab.key ? "#F97316" : "#78716C"} />
+              <IconSymbol name={tab.icon} size={15} color={activeTab === tab.key ? "#FFFFFF" : "#78716C"} />
               <Text style={[styles.tabBtnText, activeTab === tab.key && styles.tabBtnTextActive]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {/* ===== Teachers Tab ===== */}
         {activeTab === "teachers" && (
@@ -767,7 +959,7 @@ export default function AdminScreen() {
               </TouchableOpacity>
             </View>
             {loadingTeachers ? (
-              <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+              <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
             ) : (
               <FlatList
                 data={teachers}
@@ -781,8 +973,8 @@ export default function AdminScreen() {
                       <View style={styles.teacherDetails}>
                         <View style={styles.teacherNameRow}>
                           <Text style={styles.teacherName}>{item.name}</Text>
-                          <View style={[styles.roleBadge, item.role === "admin" && styles.roleBadgeAdmin, item.role === "viewer" && { backgroundColor: "#F3F4F6" }]}>
-                            <Text style={[styles.roleBadgeText, item.role === "admin" && styles.roleBadgeTextAdmin, item.role === "viewer" && { color: "#78716C" }]}>
+                          <View style={[styles.roleBadge, item.role === "admin" && styles.roleBadgeAdmin, item.role === "viewer" && styles.roleBadgeViewer]}>
+                            <Text style={[styles.roleBadgeText, item.role === "admin" && styles.roleBadgeTextAdmin, item.role === "viewer" && styles.roleBadgeTextViewer]}>
                               {item.role === "admin" ? "แอดมิน" : item.role === "viewer" ? "ผู้เข้าชม" : "ครู"}
                             </Text>
                           </View>
@@ -809,7 +1001,7 @@ export default function AdminScreen() {
                           <IconSymbol name="key.fill" size={14} color="#0EA5E9" />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.editBtn} onPress={() => openEditTeacher(item)} activeOpacity={0.8}>
-                          <IconSymbol name="pencil" size={14} color="#F97316" />
+                          <IconSymbol name="pencil" size={14} color={palette.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteTeacher(item.id, item.name)} activeOpacity={0.8}>
                           <IconSymbol name="trash" size={14} color="#DC2626" />
@@ -846,29 +1038,31 @@ export default function AdminScreen() {
               </View>
             </View>
             {/* Room filter */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-              <TouchableOpacity
-                style={[styles.filterChip, studentFilterRoom === "all" && styles.filterChipActive]}
-                onPress={() => setStudentFilterRoom("all")}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.filterChipText, studentFilterRoom === "all" && styles.filterChipTextActive]}>ทั้งหมด</Text>
-              </TouchableOpacity>
-              {classrooms.map((c) => (
+            <View style={styles.filterScroll}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 <TouchableOpacity
-                  key={c.id}
-                  style={[styles.filterChip, studentFilterRoom === c.id && styles.filterChipActive]}
-                  onPress={() => setStudentFilterRoom(c.id)}
+                  style={[styles.filterChip, studentFilterRoom === "all" && styles.filterChipActive]}
+                  onPress={() => setStudentFilterRoom("all")}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.filterChipText, studentFilterRoom === c.id && styles.filterChipTextActive]}>
-                    {formatClassroomId(c.id)}
-                  </Text>
+                  <Text style={[styles.filterChipText, studentFilterRoom === "all" && styles.filterChipTextActive]}>ทั้งหมด</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+                {classrooms.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.filterChip, studentFilterRoom === c.id && styles.filterChipActive]}
+                    onPress={() => setStudentFilterRoom(c.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.filterChipText, studentFilterRoom === c.id && styles.filterChipTextActive]}>
+                      {formatClassroomId(c.id)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
             {loadingStudents ? (
-              <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+              <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
             ) : (
               <FlatList
                 data={filteredStudents}
@@ -886,7 +1080,7 @@ export default function AdminScreen() {
                     </View>
                     <View style={styles.teacherActions}>
                       <TouchableOpacity style={styles.editBtn} onPress={() => openEditStudent(item)} activeOpacity={0.8}>
-                        <IconSymbol name="pencil" size={14} color="#F97316" />
+                        <IconSymbol name="pencil" size={14} color={palette.primary} />
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteStudent(item.id, item.name)} activeOpacity={0.8}>
                         <IconSymbol name="trash" size={14} color="#DC2626" />
@@ -911,14 +1105,14 @@ export default function AdminScreen() {
             <Text style={styles.periodsTitle}>กำหนดช่วงเวลาการเช็คชื่อ</Text>
             <Text style={styles.periodsSubtitle}>เปิด/ปิดช่วงเวลาที่ต้องการให้ครูสามารถบันทึกการเช็คชื่อได้</Text>
             {loadingPeriods ? (
-              <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+              <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
             ) : (
               <View style={styles.periodsList}>
                 {allPeriods.map((period) => (
                   <View key={period.id} style={styles.periodCard}>
                     <View style={styles.periodInfo}>
-                      <View style={[styles.periodIcon, { backgroundColor: period.status === 1 ? "#FFF7ED" : "#F3F4F6" }]}>
-                        <IconSymbol name="clock.fill" size={20} color={period.status === 1 ? "#F97316" : "#9CA3AF"} />
+                      <View style={[styles.periodIcon, { backgroundColor: period.status === 1 ? palette.surface : "#F3F4F6" }]}>
+                        <IconSymbol name="clock.fill" size={20} color={period.status === 1 ? palette.primary : "#9CA3AF"} />
                       </View>
                       <View>
                         <Text style={styles.periodName}>{PERIOD_NAMES[period.id] ?? period.name}</Text>
@@ -928,8 +1122,8 @@ export default function AdminScreen() {
                     <Switch
                       value={period.status === 1}
                       onValueChange={(val) => updatePeriodMutation.mutate({ id: period.id, status: val ? 1 : 0 })}
-                      trackColor={{ false: "#E5E7EB", true: "#FED7AA" }}
-                      thumbColor={period.status === 1 ? "#F97316" : "#9CA3AF"}
+                      trackColor={{ false: "#E5E7EB", true: palette.border }}
+                      thumbColor={period.status === 1 ? palette.primary : "#9CA3AF"}
                     />
                   </View>
                 ))}
@@ -953,18 +1147,19 @@ export default function AdminScreen() {
                       onPress={() => setShowDatePicker(true)}
                       activeOpacity={0.7}
                     >
-                      <IconSymbol name="calendar" size={16} color="#F97316" />
+                      <IconSymbol name="calendar" size={16} color={palette.primary} />
                       <Text style={styles.recordsDateText}>
-                        {toThaiDateNumeric(new Date(recordsDate + "T00:00:00"))}
+                        {toThaiDateWithDay(new Date(recordsDate + "T00:00:00"))}
                       </Text>
+                      <IconSymbol name="chevron.down" size={14} color="#78716C" />
                     </TouchableOpacity>
                   </View>
 
                   {/* LINE Summary Section */}
-                  <View style={[styles.summaryCard, { backgroundColor: "#FDFCFB", borderColor: "#FED7AA" }]}>
+                  <View style={[styles.summaryCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                     <View style={styles.summaryHeader}>
-                      <IconSymbol name="bell.fill" size={20} color="#F97316" />
-                      <Text style={[styles.summaryTitle, { color: "#9A3412" }]}>ส่งสรุปรายงานการบันทึก (LINE)</Text>
+                      <IconSymbol name="bell.fill" size={20} color={palette.primary} />
+                      <Text style={[styles.summaryTitle, { color: palette.primary }]}>ส่งสรุปรายงานการบันทึก</Text>
                     </View>
                     
                     <View style={styles.summaryForm}>
@@ -973,14 +1168,14 @@ export default function AdminScreen() {
                           <Text style={styles.rangeLabel}>ตั้งแต่วันที่</Text>
                           <TouchableOpacity style={styles.rangeBtn} onPress={() => setShowDatePicker(true)}>
                             <Text style={styles.rangeBtnText}>{toThaiDateShort(new Date(recordsDate + "T00:00:00"))}</Text>
-                            <IconSymbol name="calendar" size={14} color="#F97316" />
+                            <IconSymbol name="calendar" size={14} color={palette.primary} />
                           </TouchableOpacity>
                         </View>
                         <View style={styles.rangeCol}>
                           <Text style={styles.rangeLabel}>ถึงวันที่</Text>
                           <TouchableOpacity style={styles.rangeBtn} onPress={() => setShowEndDatePicker(true)}>
                             <Text style={styles.rangeBtnText}>{toThaiDateShort(new Date(summaryEndDate + "T00:00:00"))}</Text>
-                            <IconSymbol name="calendar" size={14} color="#F97316" />
+                            <IconSymbol name="calendar" size={14} color={palette.primary} />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1006,42 +1201,55 @@ export default function AdminScreen() {
                         </View>
                       </View>
 
-                      <TouchableOpacity 
-                        style={[styles.mainSendBtn, { backgroundColor: "#F97316" }]} 
-                        onPress={handleSendSummary}
-                        activeOpacity={0.8}
-                      >
-                        <IconSymbol name="paperplane.fill" size={16} color="#FFFFFF" />
-                        <Text style={styles.mainSendBtnText}>ส่งรายงานเข้า LINE Messaging</Text>
-                      </TouchableOpacity>
+                      <View style={{ gap: 10 }}>
+                        <TouchableOpacity 
+                          style={[styles.mainSendBtn, { backgroundColor: palette.primary }]} 
+                          onPress={handleSendSummary}
+                          activeOpacity={0.8}
+                        >
+                          <IconSymbol name="paperplane.fill" size={16} color="#FFFFFF" />
+                          <Text style={styles.mainSendBtnText}>ส่งรายงานเข้า LINE Messaging</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={[styles.mainSendBtn, { backgroundColor: "#6B7280" }]} 
+                          onPress={handlePrintReport}
+                          activeOpacity={0.8}
+                        >
+                          <IconSymbol name="printer.fill" size={16} color="#FFFFFF" />
+                          <Text style={styles.mainSendBtnText}>สร้างและพิมพ์บันทึกรายงาน</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <Text style={[styles.summaryHint, { color: "#9A3412" }]}>* ข้อมูลจะสรุปยอดรวมและอัตราส่วนร้อยละตามช่วงเวลาที่เลือก</Text>
+                    <Text style={[styles.summaryHint, { color: palette.primary }]}>* ข้อมูลจะสรุปยอดรวมและอัตราส่วนร้อยละตามช่วงเวลาที่เลือก</Text>
                   </View>
 
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-                    <TouchableOpacity
-                      style={[styles.filterChip, recordsRoomFilter === "all" && styles.filterChipActive]}
-                      onPress={() => setRecordsRoomFilter("all")}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.filterChipText, recordsRoomFilter === "all" && styles.filterChipTextActive]}>ทุกห้อง</Text>
-                    </TouchableOpacity>
-                    {classrooms.map((c) => (
+                  <View style={styles.filterScroll}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                       <TouchableOpacity
-                        key={c.id}
-                        style={[styles.filterChip, recordsRoomFilter === c.id && styles.filterChipActive]}
-                        onPress={() => setRecordsRoomFilter(c.id)}
+                        style={[styles.filterChip, recordsRoomFilter === "all" && styles.filterChipActive]}
+                        onPress={() => setRecordsRoomFilter("all")}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.filterChipText, recordsRoomFilter === c.id && styles.filterChipTextActive]}>
-                          {formatClassroomId(c.id)}
-                        </Text>
+                        <Text style={[styles.filterChipText, recordsRoomFilter === "all" && styles.filterChipTextActive]}>ทุกห้อง</Text>
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                      {classrooms.map((c) => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.filterChip, recordsRoomFilter === c.id && styles.filterChipActive]}
+                          onPress={() => setRecordsRoomFilter(c.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.filterChipText, recordsRoomFilter === c.id && styles.filterChipTextActive]}>
+                            {formatClassroomId(c.id)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
 
                   {loadingRecords && (
-                    <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+                    <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
                   )}
                 </View>
               }
@@ -1074,7 +1282,7 @@ export default function AdminScreen() {
                           onPress={() => openEditAttendance(item)}
                           activeOpacity={0.8}
                         >
-                          <IconSymbol name="pencil" size={13} color="#F97316" />
+                          <IconSymbol name="pencil" size={13} color={palette.primary} />
                           <Text style={styles.recordEditBtnText}>แก้ไข</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1248,13 +1456,16 @@ export default function AdminScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.formContent}>
-            {editingRecord?.students.map((s) => (
+            {editingRecord?.students.map((s, idx) => (
               <View key={s.student_id} style={styles.editStudentRow}>
-                <View style={styles.editStudentInfo}>
-                  <Text style={styles.editStudentName}>{studentNameMap[s.student_id] ?? s.student_id}</Text>
+                <View style={styles.editStudentInfoRow}>
+                  <Text style={styles.editStudentNo}>{idx + 1}.</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editStudentNameScroll}>
+                    <Text style={styles.editStudentName}>{studentNameMap[s.student_id] ?? s.student_id}</Text>
+                  </ScrollView>
                   <Text style={styles.editStudentId}>รหัส {s.student_id}</Text>
                 </View>
-                <View style={styles.editStatusRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editStatusRow}>
                   {STATUS_OPTIONS.map((opt) => (
                     <TouchableOpacity
                       key={opt.label}
@@ -1265,7 +1476,7 @@ export default function AdminScreen() {
                       <Text style={[styles.editStatusBtnText, s.status === opt.label && { color: opt.color }]}>{opt.label}</Text>
                     </TouchableOpacity>
                   ))}
-                </View>
+                </ScrollView>
                 {(s.status === "ขาด" || s.status === "สาย" || s.status === "ลา" || s.status === "ป่วย") && (
                   <TextInput
                     style={styles.editReasonInput}
@@ -1296,6 +1507,76 @@ export default function AdminScreen() {
         </View>
       </Modal>
 
+      {/* ===== Print Settings Modal ===== */}
+      <Modal visible={printSettingsVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPrintSettingsVisible(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>ตั้งค่าก่อนพิมพ์</Text>
+              <Text style={styles.modalSubtitle}>กรอกข้อมูลให้ครบก่อนสร้างรายงานราชการ</Text>
+            </View>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setPrintSettingsVisible(false)}>
+              <IconSymbol name="xmark" size={20} color="#1C1917" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.formContent}>
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>เลขที่หนังสือ</Text>
+              <TextInput
+                style={styles.formInput}
+                value={printSettings.refNo}
+                onChangeText={(t) => setPrintSettings(p => ({ ...p, refNo: t }))}
+                placeholder="เช่น ๑๒/๒๕๖๘"
+                placeholderTextColor="#A8A29E"
+              />
+            </View>
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>วันที่ (ภาษาไทย)</Text>
+              <TextInput
+                style={styles.formInput}
+                value={printSettings.docDate}
+                onChangeText={(t) => setPrintSettings(p => ({ ...p, docDate: t }))}
+                placeholder="เช่น ๑๑ พฤษภาคม พ.ศ. ๒๕๖๘"
+                placeholderTextColor="#A8A29E"
+              />
+            </View>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={[styles.formField, { flex: 1 }]}>
+                <Text style={styles.formLabel}>ภาคเรียนที่</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={printSettings.semester}
+                  onChangeText={(t) => setPrintSettings(p => ({ ...p, semester: t }))}
+                  placeholder="เช่น ๑"
+                  placeholderTextColor="#A8A29E"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.formField, { flex: 2 }]}>
+                <Text style={styles.formLabel}>ปีการศึกษา</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={printSettings.academicYear}
+                  onChangeText={(t) => setPrintSettings(p => ({ ...p, academicYear: t }))}
+                  placeholder="เช่น ๒๕๖๘"
+                  placeholderTextColor="#A8A29E"
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: "#6B7280" }]} onPress={() => setPrintSettingsVisible(false)} activeOpacity={0.8}>
+              <Text style={styles.saveBtnText}>ยกเลิก</Text>
+            </TouchableOpacity>
+            <View style={{ height: 10 }} />
+            <TouchableOpacity style={styles.saveBtn} onPress={handleConfirmPrint} activeOpacity={0.8}>
+              <Text style={styles.saveBtnText}>🖨️ สร้างและพิมพ์รายงาน</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <LoadingModal
         visible={loadingVisible}
         status={loadingStatus}
@@ -1317,29 +1598,29 @@ export default function AdminScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
-  tabBarScroll: { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: "#E7E5E4" },
+  tabBarScroll: { flexGrow: 0 },
   tabBar: {
     flexDirection: "row",
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
+    paddingVertical: 12,
     backgroundColor: "#FFFFFF",
+    gap: 6,
   },
   tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#F5F5F4",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: "#F3F4F6",
+    gap: 4,
   },
-  tabBtnActive: { backgroundColor: "#FFF7ED" },
-  tabBtnText: { fontSize: 13, fontWeight: "600", color: "#78716C" },
-  tabBtnTextActive: { color: "#F97316" },
+  tabBtnActive: { backgroundColor: palette.primary },
+  tabBtnText: { fontSize: 12, fontWeight: "700", color: "#78716C" },
+  tabBtnTextActive: { color: "#FFFFFF" },
   tabContent: { flex: 1 },
   tabContentHeader: {
     flexDirection: "row",
@@ -1353,14 +1634,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#F97316",
+    backgroundColor: palette.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
   },
   addButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
-  filterScroll: { flexGrow: 0, zIndex: 10, elevation: 5, marginTop: 0, marginBottom: 20, minHeight: 44 },
-  filterRow: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: "row" },
+  importButton: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    backgroundColor: "#10B981", 
+    paddingHorizontal: 12, 
+    paddingVertical: 8, 
+    borderRadius: 10, 
+    gap: 4 
+  },
+  filterScroll: { 
+    height: 56, 
+    backgroundColor: "#FFFFFF",
+    zIndex: 1,
+  },
+  filterRow: { paddingHorizontal: 16, height: "100%", alignItems: "center", gap: 8, flexDirection: "row" },
   filterChip: { 
     height: 38, 
     paddingHorizontal: 14, 
@@ -1371,11 +1665,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  filterChipActive: { backgroundColor: "#FFF7ED", borderColor: "#F97316" },
+  filterChipActive: { backgroundColor: palette.surface, borderColor: palette.primary },
   filterChipText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
-  filterChipTextActive: { color: "#F97316" },
+  filterChipTextActive: { color: palette.primary },
   listContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 32, gap: 10 },
-  importButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#10B981", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 4 },
+  
   // Teacher card
   teacherCard: {
     backgroundColor: "#FFFFFF",
@@ -1386,347 +1680,169 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 8,
   },
   teacherCardDisabled: { opacity: 0.5 },
   teacherInfo: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   teacherAvatar: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: "#FFF7ED", alignItems: "center", justifyContent: "center",
-    borderWidth: 2, borderColor: "#FED7AA",
+    backgroundColor: palette.surface, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: palette.border,
   },
-  teacherAvatarText: { fontSize: 18, fontWeight: "700", color: "#F97316" },
+  teacherAvatarText: { fontSize: 18, fontWeight: "700", color: palette.primary },
   teacherDetails: { flex: 1 },
   teacherNameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
   teacherName: { fontSize: 14, fontWeight: "700", color: "#1C1917" },
   roleBadge: { backgroundColor: "#F3F4F6", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  roleBadgeAdmin: { backgroundColor: "#FFF7ED" },
+  roleBadgeAdmin: { backgroundColor: palette.surface },
+  roleBadgeViewer: { backgroundColor: "#F3F4F6" },
   roleBadgeText: { fontSize: 10, fontWeight: "600", color: "#6B7280" },
-  roleBadgeTextAdmin: { color: "#F97316" },
+  roleBadgeTextAdmin: { color: palette.primary },
+  roleBadgeTextViewer: { color: "#78716C" },
   teacherUsername: { fontSize: 12, color: "#78716C" },
   teacherRooms: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
   teacherRoomsNone: { fontSize: 11, color: "#EF4444", marginTop: 2 },
   teacherActions: { flexDirection: "row", gap: 8 },
   resetBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#E0F2FE", alignItems: "center", justifyContent: "center" },
-  editBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#FFF7ED", alignItems: "center", justifyContent: "center" },
+  editBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: palette.surface, alignItems: "center", justifyContent: "center" },
   deleteBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#FEE2E2", alignItems: "center", justifyContent: "center" },
   disabledBadge: { backgroundColor: "#F3F4F6", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   disabledBadgeText: { fontSize: 11, color: "#9CA3AF", fontWeight: "600" },
+
   // Student card
   studentCard: {
     backgroundColor: "#FFFFFF", borderRadius: 12, padding: 12,
     borderWidth: 1, borderColor: "#E7E5E4",
     flexDirection: "row", alignItems: "center", gap: 10,
+    marginBottom: 8,
   },
   studentNoBox: {
     width: 32, height: 32, borderRadius: 8,
-    backgroundColor: "#FFF7ED", alignItems: "center", justifyContent: "center",
+    backgroundColor: palette.surface, alignItems: "center", justifyContent: "center",
   },
-  studentNo: { fontSize: 13, fontWeight: "700", color: "#F97316" },
+  studentNo: { fontSize: 13, fontWeight: "700", color: palette.primary },
   studentInfo: { flex: 1 },
   studentName: { fontSize: 14, fontWeight: "600", color: "#1C1917" },
   studentMeta: { fontSize: 11, color: "#78716C", marginTop: 2 },
-  emptyState: { alignItems: "center", paddingTop: 60 },
-  emptyStateText: { fontSize: 14, color: "#9CA3AF" },
+  
   // Periods
   periodsContent: { padding: 16 },
-  periodsTitle: { fontSize: 16, fontWeight: "700", color: "#1C1917", marginBottom: 4 },
-  periodsSubtitle: { fontSize: 13, color: "#78716C", marginBottom: 20, lineHeight: 18 },
+  periodsTitle: { fontSize: 18, fontWeight: "800", color: "#1C1917", marginBottom: 4 },
+  periodsSubtitle: { fontSize: 13, color: "#78716C", marginBottom: 20 },
   periodsList: { gap: 12 },
   periodCard: {
-    backgroundColor: "#FFFFFF", borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: "#E7E5E4",
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E7E5E4",
   },
   periodInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
   periodIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  periodName: { fontSize: 16, fontWeight: "700", color: "#1C1917" },
-  periodId: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
+  periodName: { fontSize: 15, fontWeight: "700", color: "#1C1917" },
+  periodId: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
+
   // Records
-  recordsFilterBar: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-  recordsDateRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FFF7ED", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, alignSelf: "flex-start" },
-  recordsDateText: { fontSize: 14, fontWeight: "700", color: "#1C1917" },
-  recordsDateInput: {
-    flex: 1, borderWidth: 1.5, borderColor: "#E7E5E4", borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: "#1C1917",
-  },
-  recordCard: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  activeTab: {
-    borderBottomColor: palette.primary,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#78716C",
-  },
-  activeTabText: {
-    color: palette.primary,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#1C1917",
-  },
-  addBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: palette.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addBtnText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5F5F4",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-    height: 44,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#1C1917",
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+  recordsFilterBar: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  recordsDateRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    backgroundColor: palette.surface, 
+    paddingHorizontal: 12, 
+    paddingVertical: 8, 
+    borderRadius: 10, 
     borderWidth: 1,
-    borderColor: "#E7E5E4",
-    flexDirection: "row",
-    alignItems: "center",
+    borderColor: palette.primary + "40",
+    alignSelf: "flex-start" 
   },
-  cardInfo: {
-    flex: 1,
+  recordsDateText: { fontSize: 14, fontWeight: "600", color: "#1C1917" },
+  recordCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: "#E7E5E4",
   },
-  cardName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1C1917",
-    marginBottom: 2,
-  },
-  cardSub: {
-    fontSize: 12,
-    color: "#78716C",
-  },
-  cardActions: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F5F5F4",
-  },
-  editBtn: {
-    backgroundColor: palette.surface,
-  },
-  deleteBtn: {
-    backgroundColor: "#FEE2E2",
-  },
-  // Form Styles
-  modalContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: "90%",
-  },
-  modalHeader: {
-  classroomGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  classroomChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
-  classroomChipActive: { backgroundColor: "#FFF7ED", borderColor: "#F97316" },
-  classroomChipText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
-  classroomChipTextActive: { color: "#F97316" },
-  modalFooter: { padding: 16, borderTopWidth: 1, borderTopColor: "#E7E5E4" },
-  saveBtn: { backgroundColor: "#F97316", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-  // Edit attendance
-  editStudentRow: {
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3F4F6",
-  },
-  editStudentInfo: { marginBottom: 8 },
-  editStudentName: { fontSize: 14, fontWeight: "600", color: "#1C1917" },
-  editStudentId: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
-  editStatusRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  editStatusBtn: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
-    backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent",
-  },
-  editStatusBtnText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
-  editReasonInput: {
-    marginTop: 8, borderWidth: 1.5, borderColor: "#E7E5E4", borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: "#1C1917",
-  },
-  // Summary Card Styles
+  recordHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
+  recordInfo: { flex: 1 },
+  recordRoom: { fontSize: 16, fontWeight: "800", color: palette.primary },
+  recordMeta: { fontSize: 12, color: "#1C1917", fontWeight: "600", marginTop: 2 },
+  recordTeacher: { fontSize: 11, color: "#78716C", marginTop: 2 },
+  recordStats: { flexDirection: "row", gap: 6 },
+  recordStatBadge: { backgroundColor: "#DCFCE7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  recordStatText: { fontSize: 11, fontWeight: "700" },
+  recordActions: { flexDirection: "row", justifyContent: "flex-end", gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#F3F4F6" },
+  recordEditBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  recordEditBtnText: { fontSize: 13, fontWeight: "600", color: palette.primary },
+  recordDeleteBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  recordDeleteBtnText: { fontSize: 13, fontWeight: "600", color: "#DC2626" },
+
+  // Summary Card
   summaryCard: {
-    backgroundColor: "#F0FDF4",
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
-    marginBottom: 14,
-    overflow: "hidden",
+    marginVertical: 16,
     borderWidth: 1,
-    borderColor: "#DCFCE7",
-  },
-  summaryHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#166534",
-  },
-  summaryActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  summaryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    minWidth: 80,
-    alignItems: "center",
-  },
-  summaryBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  summaryHint: {
-    fontSize: 11,
-    color: "#166534",
-    marginTop: 8,
-    opacity: 0.7,
-  },
-  summaryForm: {
-    marginTop: 8,
-    gap: 16,
-  },
-  rangeRow: {
-    flexDirection: "row",
     gap: 12,
   },
-  rangeCol: {
-    flex: 1,
-    gap: 6,
-  },
-  rangeLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#44403C",
-  },
-  rangeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#FED7AA",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  rangeBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#1C1917",
-  },
-  periodRow: {
-    gap: 8,
-  },
-  periodChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  periodChip: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E7E5E4",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  periodChipActive: {
-    backgroundColor: "#FFF7ED",
-    borderColor: "#F97316",
-  },
-  periodChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#78716C",
-  },
-  periodChipTextActive: {
-    color: "#F97316",
-  },
-  mainSendBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 4,
-    shadowColor: "#F97316",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  mainSendBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
+  summaryHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  summaryTitle: { fontSize: 15, fontWeight: "800" },
+  summaryForm: { gap: 12 },
+  rangeRow: { flexDirection: "row", gap: 12 },
+  rangeCol: { flex: 1, gap: 6 },
+  rangeLabel: { fontSize: 12, fontWeight: "700", color: "#44403C" },
+  rangeBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: palette.border, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 },
+  rangeBtnText: { fontSize: 13, fontWeight: "600", color: "#1C1917" },
+  periodRow: { gap: 8 },
+  periodChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  periodChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E5E4" },
+  periodChipActive: { backgroundColor: palette.surface, borderColor: palette.primary },
+  periodChipText: { fontSize: 12, fontWeight: "600", color: "#78716C" },
+  periodChipTextActive: { color: palette.primary },
+  mainSendBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, borderRadius: 12, gap: 10 },
+  mainSendBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  summaryHint: { fontSize: 11, marginTop: 4, textAlign: "center" },
+
+  // Modal
+  modalContainer: { flex: 1, backgroundColor: "#FFFFFF" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: "#1C1917" },
+  modalSubtitle: { fontSize: 13, color: "#78716C", marginTop: 2 },
+  modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" },
+  formContent: { padding: 20, gap: 16 },
+  formField: { gap: 8 },
+  formLabel: { fontSize: 14, fontWeight: "700", color: "#44403C" },
+  formInput: { backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: "#1C1917" },
+  formHint: { fontSize: 11, color: "#78716C" },
+  roleRow: { flexDirection: "row", gap: 10 },
+  roleBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center", borderWidth: 2, borderColor: "transparent" },
+  roleBtnActive: { backgroundColor: palette.surface, borderColor: palette.primary },
+  roleBtnText: { fontSize: 13, fontWeight: "600", color: "#78716C" },
+  roleBtnTextActive: { color: palette.primary },
+  classroomGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  classroomChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
+  classroomChipActive: { backgroundColor: palette.surface, borderColor: palette.primary },
+  classroomChipText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
+  classroomChipTextActive: { color: palette.primary },
+  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: "#F3F4F6" },
+  saveBtn: { backgroundColor: palette.primary, paddingVertical: 14, borderRadius: 14, alignItems: "center" },
+  saveBtnDisabled: { opacity: 0.7 },
+  saveBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
+
+  // Edit attendance
+  editStudentRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3F4F6", gap: 10 },
+  editStudentInfoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  editStudentNo: { fontSize: 13, fontWeight: "700", color: "#78716C", width: 24 },
+  editStudentNameScroll: { flex: 1 },
+  editStudentName: { fontSize: 15, fontWeight: "700", color: "#1C1917", whiteSpace: "nowrap" },
+  editStudentId: { fontSize: 12, color: "#9CA3AF" },
+  editStatusRow: { flexDirection: "row", gap: 6, paddingRight: 10 },
+  editStatusBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
+  editStatusBtnText: { fontSize: 13, fontWeight: "700", color: "#6B7280" },
+  editReasonInput: { marginTop: 10, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13 },
+  
+  emptyState: { alignItems: "center", paddingVertical: 60 },
+  emptyStateText: { fontSize: 14, color: "#9CA3AF" },
 });

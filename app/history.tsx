@@ -24,11 +24,11 @@ import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const STATUS_OPTIONS = [
-  { label: "มา", color: "#059669", bg: "#D1FAE5" },
-  { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
-  { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
-  { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
-  { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
+  { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
+  { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
+  { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
+  { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
+  { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
 ];
 
 type RangeMode = "week" | "month";
@@ -58,10 +58,12 @@ function getDateRange(mode: RangeMode, offset: number) {
   }
 }
 
+export default function HistoryScreen() {
   const { config } = useSchoolConfig();
+  const { teacher } = useTeacherAuth();
   const palette = getThemePalette(config.themeColor);
-  const styles = useMemo(() => createStyles(palette), [palette]);
-  
+  const styles = React.useMemo(() => createStyles(palette), [palette]);
+  const appAlert = useAppAlert();
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
   const [rangeOffset, setRangeOffset] = useState(0);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -327,9 +329,6 @@ function getDateRange(mode: RangeMode, offset: number) {
         </ScrollView>
       </ScreenContainer>
     </View>
-  );
-}
-
   );
 }
 

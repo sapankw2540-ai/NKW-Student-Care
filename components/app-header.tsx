@@ -24,7 +24,10 @@ export function AppHeader({ title, showLogout = true }: AppHeaderProps) {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 8, backgroundColor: palette.header }]}>
+    <View 
+      className="app-header-container print:hidden"
+      style={[styles.container, { paddingTop: insets.top + 8, backgroundColor: palette.header }]}
+    >
       <View style={styles.content}>
         <View style={styles.left}>
           {config.schoolLogoUrl ? (

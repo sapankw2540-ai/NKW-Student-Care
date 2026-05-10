@@ -47,6 +47,53 @@ export interface HistoryReportData {
   }[];
 }
 
+export interface OfficialReportData {
+  department: string;
+  refNo: string;
+  date: string;
+  subject: string;
+  to: string;
+  attachments: string;
+  bodyText: string;
+  reporters: {
+    name: string;
+    position: string;
+  }[];
+  director: {
+    name: string;
+    position: string;
+  };
+  table1: {
+    no: number;
+    room: string;
+    name: string;
+    absentCount: number;
+    checkCount: number;
+    percentage: string;
+  }[];
+  table2: {
+    no: number;
+    room: string;
+    checkCount: number;
+    absentCount: number;
+  }[];
+  dateRange: string;
+  logoUrl?: string;
+  // Chart Data
+  trendData?: {
+    date: string;
+    present: number;
+    absent: number;
+  }[];
+  gradeStats?: Record<string, {
+    present: number;
+    absent: number;
+    late: number;
+    leave: number;
+    sick: number;
+  }>;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   present: "มา",
   absent: "ขาด",
@@ -248,6 +295,396 @@ export function generateClassroomReportHtml(data: ClassroomSummaryData): string 
 }
 
 /**
+ * Helper to convert Arabic numerals to Thai numerals
+ */
+export function toThaiNumerals(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  const arabic = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+  const thai = ["๐", "๑", "๒", "๓", "๔", "๕", "๖", "๗", "๘", "๙"];
+  return str.split("").map(char => {
+    const idx = arabic.indexOf(char);
+    return idx >= 0 ? thai[idx] : char;
+  }).join("");
+}
+
+/**
+ * Generate HTML for official government memo report (บันทึกข้อความ)
+ */
+export function generateOfficialReportHtml(data: OfficialReportData): string {
+  const table1Rows = data.table1.map((r, idx) => `
+    <tr class="${idx % 2 === 0 ? 'odd-row' : 'even-row'}">
+      <td style="text-align:center;">${toThaiNumerals(r.no)}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.room)}</td>
+      <td>${r.name}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.absentCount)} / ${toThaiNumerals(r.checkCount)}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.percentage)}%</td>
+    </tr>
+  `).join("");
+
+  const table2Rows = data.table2.map((r, idx) => `
+    <tr class="${idx % 2 === 0 ? 'odd-row' : 'even-row'}">
+      <td style="text-align:center;">${toThaiNumerals(r.no)}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.room)}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.checkCount)}</td>
+      <td style="text-align:center;">${toThaiNumerals(r.absentCount)}</td>
+    </tr>
+  `).join("");
+
+  return `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>พรีวิวบันทึกข้อความ (เลขไทย) — NKW Student Care</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ===== SCREEN ===== */
+    html, body { margin: 0; padding: 0; background: #4B5563; font-family: 'Sarabun', sans-serif; }
+    .pages-wrapper { display: flex; flex-direction: column; align-items: center; gap: 32px; padding: 32px 0 64px; font-size: 13pt; }
+    .page {
+      background: #fff;
+      width: 21cm;
+      min-height: 29.7cm;
+      padding: 2.5cm 2cm 2cm 3cm;
+      box-sizing: border-box;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+      position: relative;
+      font-size: inherit;
+      line-height: 1.5;
+      color: #000;
+    }
+    .page-label {
+      position: absolute; top: -26px; left: 0;
+      color: #D1D5DB; font-size: 12px; font-weight: 600;
+    }
+
+    /* ===== MEMO ===== */
+    .garuda { width: 1.5cm; height: 1.7cm; display: block; }
+    .memo-title { font-size: 24pt; font-weight: bold; text-align: center; margin-top: -1.3cm; margin-bottom: 0.4cm; }
+    .memo-header { border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 0.8cm; }
+    .memo-row { display: flex; margin-bottom: 6px; align-items: flex-start; }
+    .memo-label { font-weight: bold; min-width: 1.8cm; flex-shrink: 0; white-space: nowrap; }
+    .memo-field { flex: 1; }
+    .memo-content { text-align: justify; text-justify: inter-character; }
+    .memo-para { margin-bottom: 0.4cm; line-height: 1.6; text-align: justify; text-justify: inter-character; }
+    .memo-indent { display: inline-block; width: 2.5cm; }
+    .signature-section { margin-top: 1.5cm; display: flex; justify-content: space-between; }
+    .sig-block { width: 48%; text-align: center; display: flex; flex-direction: column; align-items: center; }
+
+    /* Uniform dotted lines */
+    .dot-line {
+      border-bottom: 1.5px dashed #000;
+      margin-top: 0.8cm;
+      width: 100%;
+      display: block;
+    }
+    .sig-dots { letter-spacing: 2px; color: #000; }
+
+    /* ===== TABLES ===== */
+    .table-container { }
+    .table-title { font-weight: bold; text-align: center; margin-bottom: 0.2cm; font-size: 15pt; }
+    .table-subtitle { text-align: center; margin-bottom: 0.8cm; font-size: 15pt; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 0.8cm; font-size: 13pt; }
+    th { background-color: #D1D5DB; border: 1px solid #000; padding: 6px 8px; font-weight: bold; text-align: center; }
+    td { border: 1px solid #000; padding: 5px 8px; vertical-align: middle; white-space: nowrap; }
+    .odd-row td { background-color: #FFFFFF; }
+    .even-row td { background-color: #F3F4F6; }
+    .note { font-size: 12pt; margin-top: 0.3cm; }
+
+    /* ===== CHARTS ===== */
+    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 1cm; }
+    .chart-box { border: 1px solid #E5E7EB; padding: 10px; border-radius: 8px; text-align: center; }
+    .chart-title-sm { font-size: 14pt; font-weight: bold; margin-bottom: 5px; }
+    .trend-box { margin-top: 1.5cm; border: 1px solid #E5E7EB; padding: 20px; border-radius: 8px; }
+
+    /* ===== PRINT BAR ===== */
+    .print-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+      background: #111827; padding: 8px 20px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .print-bar-title { color: #9CA3AF; font-size: 13px; flex: 1; }
+    .btn {
+      border: none; padding: 7px 16px; border-radius: 8px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      font-family: 'Sarabun', sans-serif; color: #fff;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-print { background: #F97316; }
+    .btn-print:hover { background: #EA580C; }
+    .btn-fs { background: #374151; font-size: 18px; padding: 5px 14px; }
+    .btn-fs:hover { background: #4B5563; }
+    .fs-display { color: #E5E7EB; font-size: 13px; min-width: 40px; text-align: center; }
+    body { padding-top: 56px; }
+
+    /* ===== PRINT SETTINGS ===== */
+    @media print {
+      @page {
+        size: A4;
+        margin: 0 !important;
+      }
+      html, body { background: white; padding: 0; margin: 0 !important; }
+      .print-bar { display: none !important; }
+      .pages-wrapper { gap: 0; padding: 0; margin: 0 !important; }
+      .page {
+        box-shadow: none;
+        width: 100%;
+        min-height: 100vh;
+        page-break-after: always;
+        padding: 2.5cm 2cm 2cm 3cm;
+        margin: 0 !important;
+      }
+      .page:last-child { page-break-after: avoid; }
+      .page-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== PRINT BAR ===== -->
+<div class="print-bar">
+  <span class="print-bar-title">🖨️ พรีวิว: บันทึกข้อความ (เลขไทย) — NKW Student Care</span>
+  <button class="btn btn-fs" id="btnFsDown" title="ลดขนาดตัวอักษร">A−</button>
+  <span class="fs-display" id="fsDisplay">13pt</span>
+  <button class="btn btn-fs" id="btnFsUp" title="เพิ่มขนาดตัวอักษร">A+</button>
+  <button class="btn btn-print" onclick="doPrint()">🖨️ พิมพ์ / บันทึก PDF</button>
+</div>
+
+<div class="pages-wrapper" id="pagesWrapper">
+
+  <!-- ===== PAGE 1: MEMO ===== -->
+  <div class="page">
+    <div class="page-label">หน้าที่ ๑ — บันทึกข้อความ</div>
+
+    <img src="${data.logoUrl || 'https://www.thailibrary.in.th/wp-content/uploads/2013/04/482457_10200601494981789_1825578775_n.jpg'}"
+         class="garuda" />
+    <div class="memo-title">บันทึกข้อความ</div>
+
+    <div class="memo-header">
+      <div class="memo-row">
+        <span class="memo-label">ส่วนราชการ</span>
+        <span class="memo-field">&nbsp;&nbsp;${data.department}</span>
+        <span style="font-weight:bold; flex-shrink:0; margin-right:0.3cm;">โทร</span>
+        <span style="white-space:nowrap;">๐๔๕-๘๒๖-๗๓๖</span>
+      </div>
+      <div class="memo-row">
+        <span class="memo-label">ที่</span>
+        <span class="memo-field" id="fieldRefNo">${toThaiNumerals(data.refNo)}</span>
+      </div>
+      <div class="memo-row" style="margin-top: -0.8cm; margin-left: 50%; font-weight: normal;">
+        <span style="min-width: 1.2cm;">วันที่</span>
+        <span id="fieldDate">${toThaiNumerals(data.date)}</span>
+      </div>
+      <div class="memo-row">
+        <span class="memo-label">เรื่อง</span>
+        <span class="memo-field">${toThaiNumerals(data.subject)}</span>
+      </div>
+    </div>
+
+    <div class="memo-content">
+      <div class="memo-para"><b>เรียน</b> &nbsp;&nbsp; ${data.to}</div>
+      <div class="memo-para" style="display: flex; align-items: flex-start;">
+        <span style="font-weight: bold; min-width: 3.5cm; flex-shrink: 0;">สิ่งที่ส่งมาด้วย</span>
+        <span>${toThaiNumerals(data.attachments)}</span>
+      </div>
+      <div class="memo-para">
+        <span class="memo-indent"></span>${toThaiNumerals(data.bodyText)}
+      </div>
+      <div class="memo-para">
+        <span class="memo-indent"></span>บัดนี้ งานกิจการนักเรียนและผู้ดูแลระบบสถิติการเข้าร่วมกิจกรรมของนักเรียนได้สรุปข้อมูลเรียบร้อยแล้ว จึงได้นำเสนอข้อมูลต่อผู้บริหาร รายละเอียดดังแนบมาพร้อมนี้
+      </div>
+      <div class="memo-para" style="margin-left:2.5cm;">จึงเรียนมาเพื่อโปรดทราบ</div>
+    </div>
+
+    <div class="signature-section">
+      <div class="sig-block">
+        <div style="margin-bottom: 0.2cm;">ลงชื่อ......................................................</div>
+        <div style="margin-top: 0.1cm;">(${(data.reporters[0]?.name || "").split(' ').join(' &nbsp; ')})</div>
+        <div style="margin-top: 0.1cm;">${data.reporters[0]?.position || "ครูที่ปรึกษา"}</div>
+      </div>
+      <div class="sig-block">
+        <div style="margin-bottom: 0.2cm;">ลงชื่อ......................................................</div>
+        <div style="margin-top: 0.1cm;">(${(data.reporters[1]?.name || "............................................").split(' ').join(' &nbsp; ')})</div>
+        <div style="margin-top: 0.1cm;">${data.reporters[1]?.position || "หัวหน้ากลุ่มบริหารกิจการนักเรียน"}</div>
+      </div>
+    </div>
+
+    <div style="margin-top:1.2cm;">
+      <div style="font-weight:bold;">ความเห็นรองผู้อำนวยการ</div>
+      <span class="dot-line"></span>
+
+      <div style="margin-top:1.2cm; text-align:center; margin-left:50%;">
+        <div style="margin-bottom: 0.2cm;">ลงชื่อ......................................................</div>
+        <div style="margin-top:0.3cm;">(${(data.director?.name || "............................................").split(' ').join(' &nbsp; ')})</div>
+        <div>${data.director?.position || "ผู้อำนวยการโรงเรียนน้ำคำวิทยา"}</div>
+      </div>
+    </div>
+    <!-- พื้นที่ว่างด้านล่างกระดาษประมาณ 3 บรรทัด -->
+    <div style="height: 1.5cm;"></div>
+  </div>
+
+  <!-- ===== PAGE 2: TABLES ===== -->
+  <div class="page">
+    <div class="page-label">หน้าที่ ๒ — ตารางสถิติ</div>
+
+    <div class="table-container">
+      <div class="table-title">สรุปสถิติการเข้าร่วมกิจกรรมหน้าเสาธงและกิจกรรมก่อนเรียนคาบบ่าย</div>
+      <div class="table-subtitle">ระหว่างวันที่ ${toThaiNumerals(data.dateRange)}</div>
+
+      <div style="font-weight:bold; margin-bottom:0.3cm;">ตารางที่ ๑: รายชื่อนักเรียนที่ขาด (เรียงจาก "ขาด" มาก → น้อย)</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:1.2cm;">ลำดับ</th>
+            <th style="width:1.8cm;">ห้อง</th>
+            <th>ชื่อ - สกุล</th>
+            <th style="width:3.5cm;">จำนวนครั้ง(ขาด) / ที่เช็ค</th>
+            <th style="width:1.8cm;">ร้อยละ (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${table1Rows}
+        </tbody>
+      </table>
+
+      <div style="font-weight:bold; margin-bottom:0.3cm; margin-top:0.8cm;">ตารางที่ ๒: สรุปแยกตามห้องเรียน</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:1.2cm;">ลำดับ</th>
+            <th style="width:4.5cm;">ห้องเรียน</th>
+            <th style="width:4cm;">จำนวนครั้งที่เช็ค</th>
+            <th>จำนวนครั้ง(ขาด)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${table2Rows}
+        </tbody>
+      </table>
+      <div class="note">* หมายเหตุ: "จำนวนครั้ง" หมายถึง นับจำนวนขาดทั้งรอบเช้าและรอบบ่าย</div>
+    </div>
+  </div>
+
+  <!-- ===== PAGE 3: CHARTS ===== -->
+  <div class="page">
+    <div class="page-label">หน้าที่ ๓ — แผนภูมิสถิติ</div>
+    <div class="table-title">สรุปแผนภูมิสถิติการเข้าร่วมกิจกรรม</div>
+    <div class="table-subtitle">ระหว่างวันที่ ${toThaiNumerals(data.dateRange)} (รวมเช้า-บ่าย)</div>
+
+    <div style="font-weight: bold; font-size: 16pt; margin-bottom: 0.5cm;">สรุปแยกตามระดับชั้น (รวมเช้า-บ่าย)</div>
+    <div class="chart-grid">
+      ${Object.keys(data.gradeStats || {}).sort().map(grade => {
+        const safeId = grade.replace(/[^a-zA-Z0-9]/g, '_');
+        return `
+        <div class="chart-box">
+          <div class="chart-title-sm">ระดับชั้น ${toThaiNumerals(grade)}</div>
+          <canvas id="pie-${safeId}" style="max-height: 180px;"></canvas>
+        </div>
+        `;
+      }).join("")}
+    </div>
+
+    <div class="trend-box">
+      <div style="font-weight: bold; font-size: 16pt; margin-bottom: 1cm; text-align: center;">กราฟแนวโน้มการมาและการขาด (รายวัน รวมเช้า-บ่าย)</div>
+      <canvas id="trend-chart" style="height: 250px;"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function toThai(n) {
+    if (n === null || n === undefined) return "";
+    var s = String(n);
+    var a = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    var t = ["๐", "๑", "๒", "๓", "๔", "๕", "๖", "๗", "๘", "๙"];
+    return s.split("").map(function(c) {
+      var i = a.indexOf(c);
+      return i >= 0 ? t[i] : c;
+    }).join("");
+  }
+
+  let fontSize = 13;
+  const MIN_FS = 10, MAX_FS = 24;
+  const wrapper = document.getElementById('pagesWrapper');
+  const display = document.getElementById('fsDisplay');
+
+  function applyFs() {
+    wrapper.style.fontSize = fontSize + 'pt';
+    display.textContent = fontSize + 'pt';
+  }
+  document.getElementById('btnFsUp').addEventListener('click', () => {
+    if (fontSize < MAX_FS) { fontSize += 1; applyFs(); }
+  });
+  document.getElementById('btnFsDown').addEventListener('click', () => {
+    if (fontSize > MIN_FS) { fontSize -= 1; applyFs(); }
+  });
+
+  function doPrint() {
+    const origTitle = document.title;
+    document.title = '';
+    window.print();
+    setTimeout(() => {
+      document.title = origTitle;
+    }, 1000);
+  }
+
+  var colors = { present: '#10B981', absent: '#EF4444', late: '#F59E0B', leave: '#3B82F6', sick: '#8B5CF6' };
+  var gradeData = ${JSON.stringify(data.gradeStats || {})};
+  var trendData = ${JSON.stringify(data.trendData || [])};
+
+  Object.keys(gradeData).forEach(function(grade) {
+    var safeId = grade.replace(/[^a-zA-Z0-9]/g, '_');
+    var canvas = document.getElementById('pie-' + safeId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var d = gradeData[grade];
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: ['มา', 'ขาด', 'สาย', 'ลา', 'ป่วย'],
+        datasets: [{ data: [d.present, d.absent, d.late, d.leave, d.sick], backgroundColor: [colors.present, colors.absent, colors.late, colors.leave, colors.sick] }]
+      },
+      options: { 
+        plugins: { 
+          legend: { position: 'bottom', labels: { font: { family: 'Sarabun', size: 10 } } },
+          tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': ' + toThai(ctx.raw); } } }
+        }, 
+        animation: false 
+      }
+    });
+  });
+
+  if (trendData.length > 0) {
+    new Chart(document.getElementById('trend-chart').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: trendData.map(function(t) { return t.date; }),
+        datasets: [
+          { label: 'มา', data: trendData.map(function(t) { return t.present; }), borderColor: colors.present, fill: false, tension: 0.3 },
+          { label: 'ขาด', data: trendData.map(function(t) { return t.absent; }), borderColor: colors.absent, fill: false, tension: 0.3 }
+        ]
+      },
+      options: { 
+        plugins: { 
+          legend: { labels: { font: { family: 'Sarabun' } } },
+          tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + toThai(ctx.raw); } } }
+        }, 
+        scales: {
+          y: { ticks: { font: { family: 'Sarabun' }, callback: function(v) { return toThai(v); } } },
+          x: { ticks: { font: { family: 'Sarabun' }, callback: function(v) { return toThai(this.getLabelForValue(v)); } } }
+        },
+        animation: false 
+      }
+    });
+  }
+</script>
+</body>
+</html>`;
+}
+
+/**
  * Generate HTML for history/summary report
  */
 export function generateHistoryReportHtml(data: HistoryReportData): string {
@@ -377,14 +814,18 @@ export async function exportPdfAndShare(
   filename: string
 ): Promise<void> {
   if (Platform.OS === "web") {
-    // On web, open print dialog with the specific HTML content
-    await Print.printAsync({ html });
+    // Open the report in a new tab for previewing
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
     return;
   }
 
   const { uri } = await Print.printToFileAsync({
     html,
-    margins: { left: 20, top: 20, right: 20, bottom: 20 },
+    margins: { left: 0, top: 0, right: 0, bottom: 0 },
   });
 
   await shareAsync(uri, {

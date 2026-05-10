@@ -47,10 +47,10 @@ function getDateRange(mode: RangeMode, offset: number) {
   }
 }
 
+export default function AbsentAlertScreen() {
   const { config } = useSchoolConfig();
   const palette = getThemePalette(config.themeColor);
   const styles = useMemo(() => createStyles(palette), [palette]);
-  
   const { teacher } = useTeacherAuth();
   const appAlert = useAppAlert();
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
@@ -252,16 +252,20 @@ function getDateRange(mode: RangeMode, offset: number) {
   );
 }
 
-  );
-}
-
 const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   filterBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 10, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-  modeRow: { flexDirection: "row", gap: 8 },
-  modeBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: "#F3F4F6" },
+  modeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  modeBtn: { 
+    flex: 1, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    backgroundColor: "#F5F5F4", 
+    alignItems: "center", 
+    justifyContent: "center" 
+  },
   modeBtnActive: { backgroundColor: palette.primary },
-  modeBtnText: { fontSize: 13, fontWeight: "600", color: "#78716C" },
+  modeBtnText: { fontSize: 13, fontWeight: "700", color: "#78716C" },
   modeBtnTextActive: { color: "#FFFFFF" },
   navRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   navBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: palette.surface, justifyContent: "center", alignItems: "center" },

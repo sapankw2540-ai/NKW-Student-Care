@@ -19,7 +19,7 @@ export function PeriodSelectionModal({ visible, onSelect, onClose }: PeriodSelec
     { 
       id: "morning", 
       name: "กิจกรรมหน้าเสาธง", 
-      desc: "ช่วงเช้า (07:30 - 08:30 น.)",
+      desc: "ช่วงเช้า (08:10 - 08:40 น.)",
     },
     { 
       id: "afternoon", 

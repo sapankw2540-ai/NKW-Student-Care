@@ -30,11 +30,11 @@ import { usePeriod } from "@/lib/period-context";
 
 
 const STATUS_OPTIONS = [
-  { label: "มา", color: "#059669", bg: "#D1FAE5" },
-  { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
-  { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
-  { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
-  { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
+  { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
+  { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
+  { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
+  { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
+  { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
 ];
 
 function getStatusStyle(status: string) {
@@ -430,37 +430,37 @@ export default function AttendanceScreen() {
                 return (
                   <View style={styles.studentRow}>
                     <View style={styles.studentRowTop}>
-                      <View style={styles.studentInfo}>
+                      <View style={styles.studentNoBox}>
                         <Text style={styles.studentNo}>{item.no}</Text>
-                        <Text style={styles.studentName} numberOfLines={1}>{item.name}</Text>
                       </View>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusScrollView}>
-                        <View style={styles.statusButtons}>
-                          {STATUS_OPTIONS.map((s) => (
-                            <TouchableOpacity
-                              key={s.label}
-                              style={[
-                                styles.statusBtn,
-                                { backgroundColor: currentStatus === s.label ? s.bg : "#F3F4F6" },
-                                !canEdit && { opacity: 0.8 }
-                              ]}
-                              onPress={() => canEdit && setStudentStatus(item.studentId, s.label)}
-                              disabled={!canEdit}
-                            >
-                              <Text style={[styles.statusBtnText, { color: currentStatus === s.label ? s.color : "#6B7280" }]}>
-                                {s.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                          {/* Note toggle button */}
-                          <TouchableOpacity
-                            style={[styles.noteBtn, hasNote && styles.noteBtnActive]}
-                            onPress={() => (canEdit || hasNote) && toggleNote(item.studentId)}
-                          >
-                            <IconSymbol name="doc.text" size={14} color={hasNote ? palette.primary : "#9CA3AF"} />
-                          </TouchableOpacity>
-                        </View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.studentNameScroll}>
+                        <Text style={styles.studentName}>{item.name}</Text>
                       </ScrollView>
+                      <View style={styles.statusButtonsFixed}>
+                        {STATUS_OPTIONS.map((s) => (
+                          <TouchableOpacity
+                            key={s.label}
+                            style={[
+                              styles.statusBtn,
+                              { backgroundColor: currentStatus === s.label ? s.bg : "#F3F4F6" },
+                              !canEdit && { opacity: 0.8 }
+                            ]}
+                            onPress={() => canEdit && setStudentStatus(item.studentId, s.label)}
+                            disabled={!canEdit}
+                          >
+                            <Text style={[styles.statusBtnText, { color: currentStatus === s.label ? s.color : "#6B7280" }]}>
+                              {s.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {/* Note toggle button */}
+                        <TouchableOpacity
+                          style={[styles.noteBtn, hasNote && styles.noteBtnActive]}
+                          onPress={() => (canEdit || hasNote) && toggleNote(item.studentId)}
+                        >
+                          <IconSymbol name="doc.text" size={14} color={hasNote ? palette.primary : "#9CA3AF"} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                     {/* Note input (expandable) */}
                     {noteExpanded && (
@@ -679,14 +679,14 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   studentRowTop: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
     paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  studentInfo: { flexDirection: "row", alignItems: "center", width: 155, gap: 8 },
-  studentNo: { fontSize: 13, color: "#78716C", width: 24, textAlign: "center" },
-  studentName: { fontSize: 14, fontWeight: "500", color: "#1C1917", flex: 1 },
-  statusScrollView: { flex: 1 },
-  statusButtons: { flexDirection: "row", gap: 6, paddingRight: 8, alignItems: "center" },
+  studentNoBox: { width: 24, alignItems: "center", justifyContent: "center", marginRight: 8 },
+  studentNo: { fontSize: 13, color: "#78716C", fontWeight: "600" },
+  studentNameScroll: { flex: 1, marginRight: 8 },
+  studentName: { fontSize: 14, fontWeight: "500", color: "#1C1917", whiteSpace: "nowrap" },
+  statusButtonsFixed: { flexDirection: "row", gap: 6, alignItems: "center" },
   statusBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   statusBtnText: { fontSize: 13, fontWeight: "600" },
   noteBtn: {

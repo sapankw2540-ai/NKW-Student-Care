@@ -393,10 +393,6 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderWidth: 3,
     borderColor: '#FFFFFF',
   },
-  themeCircleActive: {
-    borderWidth: 3,
-    borderColor: palette.primary,
-  },
   inputGroup: {
     gap: 8,
   },

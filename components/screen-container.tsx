@@ -18,7 +18,7 @@ export function ScreenContainer({ children, style, edges = ['top', 'left', 'righ
   };
 
   return (
-    <View style={[styles.container, paddingStyle, style]} {...props}>
+    <View className={`print-content ${props.className || ''}`} style={[styles.container, paddingStyle, style]} {...props}>
       {children}
     </View>
   );

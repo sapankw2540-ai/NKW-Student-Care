@@ -57,7 +57,7 @@ export const appRouter = router({
     .query(async ({ input, ctx }) => {
       const { data, error } = await ctx.supabase
         .from("attendance")
-        .select("*")
+        .select("*, classrooms(name)")
         .gte("date", input.startDate)
         .lte("date", input.endDate);
 
@@ -512,7 +512,8 @@ export const appRouter = router({
           student_id,
           status_name,
           notes,
-          teachers (name)
+          teachers (name),
+          classrooms (name)
         `)
         .gte("date", input.startDate)
         .lte("date", input.endDate);
@@ -542,6 +543,8 @@ export const appRouter = router({
           student_id: item.student_id,
           status: item.status_name,
           reason: item.notes,
+          classroom_name: (item as any).classrooms?.name || "ไม่ทราบห้อง"
+        });
         });
       });
 

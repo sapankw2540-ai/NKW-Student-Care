@@ -21,11 +21,11 @@ import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 
 const STATUS_OPTIONS = [
-  { label: "มา", color: "#059669", bg: "#D1FAE5" },
-  { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
-  { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
-  { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
-  { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
+  { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
+  { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
+  { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
+  { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
+  { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
 ];
 
 interface RoomSummary {
@@ -285,7 +285,7 @@ export default function OverallSummaryScreen() {
 
                 {/* Total Row */}
                 <View style={styles.totalRow}>
-                  <Text style={[styles.totalRowText, styles.roomNameCol, { color: "#F97316" }]}>
+                  <Text style={[styles.totalRowText, styles.roomNameCol, { color: palette.primary }]}>
                     รวมทั้งหมด
                   </Text>
                   <Text style={[styles.totalRowText, { color: "#1C1917" }]}>{grandTotal.total}</Text>

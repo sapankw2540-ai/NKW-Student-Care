@@ -14,6 +14,7 @@ import { PeriodSelectionModal } from "@/components/period-selection-modal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { AppAlertProvider } from "@/components/app-alert-provider";
+import { LoadingModal } from "@/components/loading-modal";
 
 // Root Layout with all providers
 export default function RootLayout() {
@@ -51,6 +52,7 @@ function TabLayout() {
   const palette = getThemePalette(config.themeColor);
 
   const [showPeriodModal, setShowPeriodModal] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
 
 
   const teacher = actualTeacher;
@@ -69,10 +71,10 @@ function TabLayout() {
     const isAttendanceTab = attendanceTabs.includes(pathname);
 
     // Only show modal if NOT loading and period is not set
-    if (teacher && isAttendanceTab && !selectedPeriod && !showPeriodModal && !isPageLoading) {
+    if (teacher && isAttendanceTab && !selectedPeriod && !showPeriodModal && !isPageLoading && !isInitialLoading) {
       setShowPeriodModal(true);
     }
-  }, [selectedPeriod, teacher, pathname, isPageLoading]);
+  }, [selectedPeriod, teacher, pathname, isPageLoading, isInitialLoading]);
 
   if (isLoading) return null;
 
@@ -81,17 +83,63 @@ function TabLayout() {
   const onPeriodSelect = (period: Period) => {
     setSelectedPeriod(period);
     setShowPeriodModal(false);
+    
+    // Show loading modal for 2 seconds after selection
+    setIsInitialLoading(true);
+    setTimeout(() => {
+      setIsInitialLoading(false);
+    }, 2000);
   };
 
   const showTabBar = teacher && pathname !== "/login" && pathname !== "/onboarding";
 
   return (
     <>
+      <LoadingModal 
+        visible={isInitialLoading} 
+        status="loading" 
+        message="กำลังโหลดข้อมูล..." 
+        showActionButton={false}
+      />
       <PeriodSelectionModal 
         visible={showPeriodModal} 
         onSelect={onPeriodSelect} 
         onClose={() => setShowPeriodModal(false)} 
       />
+      {isWeb && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            /* Hide elements with print:hidden class */
+            .print\\:hidden, [role="tablist"], .app-header-container {
+              display: none !important;
+            }
+            
+            /* Ensure the print content fills the page */
+            .print-content {
+              flex: 1 !important;
+              display: block !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+              overflow: visible !important;
+              position: static !important;
+            }
+
+            /* Hide everything else */
+            body > #root > div > div > *:not(.print-content) {
+              /* display: none !important; */
+            }
+
+            /* Reset body for printing */
+            body, #root {
+              background-color: white !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+          }
+        ` }} />
+      )}
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: palette.primary,
