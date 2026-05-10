@@ -29,6 +29,10 @@ import {
 import { useAppAlert } from "@/components/app-alert-provider";
 
 export default function ProfileScreen() {
+  const { config } = useSchoolConfig();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const { teacher, setTeacher, logout } = useTeacherAuth();
   const { config } = useSchoolConfig();
 
@@ -333,10 +337,10 @@ export default function ProfileScreen() {
         />
       </ScreenContainer>
 
-      {/* Change Password Modal - Using View instead of Modal to allow AppAlert to overlap on top */}
+      {/* Change Password Modal */}
       {passModalVisible && (
         <View style={styles.absoluteOverlay}>
-          <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>เปลี่ยนรหัสผ่านใหม่(อย่างน้อย 6 ตัว)</Text>
               
@@ -367,7 +371,7 @@ export default function ProfileScreen() {
                   <Text style={styles.cancelBtnText}>ยกเลิก</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.submitBtn, { backgroundColor: "#F97316" }]} 
+                  style={styles.submitBtn} 
                   onPress={handleChangePassword}
                   disabled={isChangingPass}
                 >
@@ -386,13 +390,13 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   absoluteOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 999,
   },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
+  modalContainer: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.5)", padding: 24 },
   modalContent: { backgroundColor: "#FFF", borderRadius: 24, padding: 24, gap: 16 },
   modalTitle: { fontSize: 20, fontWeight: "800", color: "#1C1917", textAlign: "center", marginBottom: 8 },
   formField: { gap: 8 },
@@ -401,11 +405,11 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: "row", gap: 12, marginTop: 16 },
   cancelBtn: { flex: 1, height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F5F4" },
   cancelBtnText: { color: "#78716C", fontWeight: "700" },
-  submitBtn: { flex: 2, height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  submitBtn: { flex: 2, height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: palette.primary },
   submitBtnText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
   scrollContent: { padding: 16, paddingBottom: 40 },
   profileCard: {
-    backgroundColor: "#FFF7ED",
+    backgroundColor: palette.surface,
     borderRadius: 20,
     padding: 20,
     flexDirection: "row",
@@ -413,13 +417,13 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#FED7AA",
+    borderColor: palette.primary + "30",
   },
   avatar: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#F97316",
+    backgroundColor: palette.primary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -428,9 +432,9 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 18, fontWeight: "700", color: "#1C1917", marginBottom: 2 },
   profileUsername: { fontSize: 13, color: "#78716C", marginBottom: 6 },
   roleBadge: { alignSelf: "flex-start", backgroundColor: "#F3F4F6", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  roleBadgeAdmin: { backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FED7AA" },
+  roleBadgeAdmin: { backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.primary + "40" },
   roleBadgeText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
-  roleBadgeTextAdmin: { color: "#F97316" },
+  roleBadgeTextAdmin: { color: palette.primary },
   section: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,

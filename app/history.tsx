@@ -18,15 +18,17 @@ import { useTeacherAuth } from "@/lib/teacher-auth";
 import { toThaiDateWithDay, formatDateForApi, formatClassroomId } from "@/lib/thai-date";
 import type { StudentAttendanceEntry } from "@/shared/types";
 import { useAppAlert } from "@/components/app-alert-provider";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const STATUS_OPTIONS = [
-  { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
-  { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
-  { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
-  { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
-  { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
+  { label: "มา", color: "#059669", bg: "#D1FAE5" },
+  { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
+  { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
+  { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
+  { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
 ];
 
 type RangeMode = "week" | "month";
@@ -56,9 +58,10 @@ function getDateRange(mode: RangeMode, offset: number) {
   }
 }
 
-export default function HistoryScreen() {
-  const { teacher } = useTeacherAuth();
-  const appAlert = useAppAlert();
+  const { config } = useSchoolConfig();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
   const [rangeOffset, setRangeOffset] = useState(0);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -187,7 +190,7 @@ export default function HistoryScreen() {
           {/* Range navigation */}
           <View style={styles.rangeNav}>
             <TouchableOpacity style={styles.navBtn} onPress={() => setRangeOffset((o) => o - 1)}>
-              <IconSymbol name="chevron.left" size={20} color="#F97316" />
+              <IconSymbol name="chevron.left" size={20} color={palette.primary} />
             </TouchableOpacity>
             <Text style={styles.rangeLabel}>{range.label}</Text>
             <TouchableOpacity
@@ -195,7 +198,7 @@ export default function HistoryScreen() {
               onPress={() => setRangeOffset((o) => Math.min(0, o + 1))}
               disabled={rangeOffset >= 0}
             >
-              <IconSymbol name="chevron.right" size={20} color={rangeOffset >= 0 ? "#D1D5DB" : "#F97316"} />
+              <IconSymbol name="chevron.right" size={20} color={rangeOffset >= 0 ? "#D1D5DB" : palette.primary} />
             </TouchableOpacity>
           </View>
 
@@ -216,7 +219,7 @@ export default function HistoryScreen() {
           </ScrollView>
 
           {isLoading ? (
-            <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+            <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
           ) : daySummaries.length === 0 ? (
             <View style={styles.emptyBox}>
               <IconSymbol name="calendar" size={40} color="#D1D5DB" />
@@ -229,7 +232,7 @@ export default function HistoryScreen() {
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>สรุปรวม</Text>
                   <TouchableOpacity style={styles.exportBtn} onPress={handleExport} activeOpacity={0.8}>
-                    <IconSymbol name="square.and.arrow.up" size={14} color="#F97316" />
+                    <IconSymbol name="square.and.arrow.up" size={14} color={palette.primary} />
                     <Text style={styles.exportBtnText}>ส่งออก</Text>
                   </TouchableOpacity>
                 </View>
@@ -327,40 +330,43 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+  );
+}
+
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   scrollContent: { padding: 16, paddingBottom: 32 },
   modeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   modeBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: "#F3F4F6", alignItems: "center" },
-  modeBtnActive: { backgroundColor: "#F97316" },
+  modeBtnActive: { backgroundColor: palette.primary },
   modeBtnText: { fontSize: 14, fontWeight: "600", color: "#6B7280" },
   modeBtnTextActive: { color: "#FFFFFF" },
   rangeNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFF7ED", alignItems: "center", justifyContent: "center" },
+  navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: palette.surface, alignItems: "center", justifyContent: "center" },
   navBtnDisabled: { backgroundColor: "#F3F4F6" },
   rangeLabel: { fontSize: 15, fontWeight: "700", color: "#1C1917" },
   roomScroll: { marginBottom: 16 },
   roomScrollContent: { gap: 8, paddingRight: 4 },
   roomChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
-  roomChipActive: { backgroundColor: "#FFF7ED", borderColor: "#F97316" },
+  roomChipActive: { backgroundColor: palette.surface, borderColor: palette.primary },
   roomChipText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
-  roomChipTextActive: { color: "#F97316" },
+  roomChipTextActive: { color: palette.primary },
   emptyBox: { alignItems: "center", paddingTop: 60, gap: 12 },
   emptyText: { color: "#9CA3AF", fontSize: 15 },
   summarySection: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#E7E5E4", marginBottom: 16 },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: "#1C1917", marginBottom: 12 },
-  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF7ED", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  exportBtnText: { fontSize: 12, fontWeight: "600", color: "#F97316" },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: palette.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  exportBtnText: { fontSize: 12, fontWeight: "600", color: palette.primary },
   statsGrid: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 12 },
   statCard: { flex: 1, minWidth: 56, alignItems: "center", paddingVertical: 10, borderRadius: 10 },
   statCount: { fontSize: 20, fontWeight: "700" },
   statLabel: { fontSize: 11, fontWeight: "600" },
   rateRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
   rateLabel: { fontSize: 13, color: "#78716C" },
-  rateValue: { fontSize: 13, fontWeight: "700", color: "#F97316" },
+  rateValue: { fontSize: 13, fontWeight: "700", color: palette.primary },
   rateBarBg: { height: 8, backgroundColor: "#F3F4F6", borderRadius: 4, overflow: "hidden" },
-  rateBarFill: { height: 8, backgroundColor: "#F97316", borderRadius: 4 },
+  rateBarFill: { height: 8, backgroundColor: palette.primary, borderRadius: 4 },
   chartSection: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#E7E5E4", marginBottom: 16 },
   chartContainer: { height: 160, marginTop: 10, position: "relative" },
   gridLines: { position: "absolute", left: 0, right: 0, top: 0, bottom: 40, justifyContent: "space-between" },
@@ -372,8 +378,8 @@ const styles = StyleSheet.create({
   bar: { width: "100%", borderTopLeftRadius: 6, borderTopRightRadius: 6 },
   barLabel: { fontSize: 11, fontWeight: "600", color: "#6B7280", marginTop: 8 },
   barDate: { fontSize: 10, color: "#9CA3AF" },
-  todayLabel: { color: "#F97316" },
-  todayDate: { color: "#F97316", fontWeight: "700" },
+  todayLabel: { color: palette.primary },
+  todayDate: { color: palette.primary, fontWeight: "700" },
   dailySection: { gap: 10 },
   dayCard: { backgroundColor: "#FFFFFF", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#E7E5E4" },
   dayCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },

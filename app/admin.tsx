@@ -21,6 +21,8 @@ import { formatClassroomId, formatClassroomIds, formatDateForApi, toThaiDateShor
 import { DatePickerModal } from "@/components/date-picker-modal";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
 import { useAppAlert } from "@/components/app-alert-provider";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 import * as DocumentPicker from "expo-document-picker";
 import * as XLSX from "xlsx";
 import { Platform } from "react-native";
@@ -109,6 +111,10 @@ const STATUS_OPTIONS = [
 ];
 
 export default function AdminScreen() {
+  const { config } = useSchoolConfig();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const { teacher } = useTeacherAuth();
   const appAlert = useAppAlert();
   const [activeTab, setActiveTab] = useState<AdminTab>("teachers");
@@ -1444,50 +1450,132 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: "#1C1917",
   },
   recordCard: {
-    backgroundColor: "#FFFFFF", borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: "#E7E5E4",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
-  recordHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  recordInfo: { flex: 1 },
-  recordRoom: { fontSize: 15, fontWeight: "700", color: "#1C1917" },
-  recordMeta: { fontSize: 12, color: "#78716C", marginTop: 2 },
-  recordTeacher: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
-  recordStats: { gap: 4, alignItems: "flex-end" },
-  recordStatBadge: { backgroundColor: "#DCFCE7", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  recordStatText: { fontSize: 11, fontWeight: "600" },
-  recordActions: { flexDirection: "row", gap: 8 },
-  recordEditBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
-    paddingVertical: 8, borderRadius: 8, backgroundColor: "#FFF7ED", borderWidth: 1, borderColor: "#FED7AA",
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
   },
-  recordEditBtnText: { fontSize: 13, fontWeight: "600", color: "#F97316" },
-  recordDeleteBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
-    paddingVertical: 8, borderRadius: 8, backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA",
+  activeTab: {
+    borderBottomColor: palette.primary,
   },
-  recordDeleteBtnText: { fontSize: 13, fontWeight: "600", color: "#DC2626" },
-  // Modal
-  modalContainer: { flex: 1, backgroundColor: "#FFFFFF" },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#78716C",
+  },
+  activeTabText: {
+    color: palette.primary,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1C1917",
+  },
+  addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: palette.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  addBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F5F4",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: "#1C1917",
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E7E5E4",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  cardName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1C1917",
+    marginBottom: 2,
+  },
+  cardSub: {
+    fontSize: 12,
+    color: "#78716C",
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5F5F4",
+  },
+  editBtn: {
+    backgroundColor: palette.surface,
+  },
+  deleteBtn: {
+    backgroundColor: "#FEE2E2",
+  },
+  // Form Styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "90%",
+  },
   modalHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: "#F97316", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: "#FFFFFF" },
-  modalSubtitle: { fontSize: 12, color: "#FFF7ED", marginTop: 2 },
-  modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  formContent: { padding: 20, paddingBottom: 32 },
-  formField: { marginBottom: 18 },
-  formLabel: { fontSize: 13, fontWeight: "600", color: "#1C1917", marginBottom: 6 },
-  formHint: { fontSize: 11, color: "#78716C", marginBottom: 8 },
-  formInput: {
-    borderWidth: 1.5, borderColor: "#E7E5E4", borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#1C1917", backgroundColor: "#FAFAFA",
-  },
-  roleRow: { flexDirection: "row", gap: 10 },
-  roleBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: "#F3F4F6", alignItems: "center" },
-  roleBtnActive: { backgroundColor: "#FFF7ED", borderWidth: 1.5, borderColor: "#F97316" },
-  roleBtnText: { fontSize: 14, fontWeight: "600", color: "#6B7280" },
-  roleBtnTextActive: { color: "#F97316" },
   classroomGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   classroomChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
   classroomChipActive: { backgroundColor: "#FFF7ED", borderColor: "#F97316" },

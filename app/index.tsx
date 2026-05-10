@@ -30,11 +30,11 @@ import { usePeriod } from "@/lib/period-context";
 
 
 const STATUS_OPTIONS = [
-  { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
-  { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
-  { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
-  { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
-  { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
+  { label: "มา", color: "#059669", bg: "#D1FAE5" },
+  { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
+  { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
+  { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
+  { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
 ];
 
 function getStatusStyle(status: string) {

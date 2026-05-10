@@ -16,6 +16,8 @@ import { useTeacherAuth } from "@/lib/teacher-auth";
 import { formatDateForApi, formatClassroomId } from "@/lib/thai-date";
 import { generateHistoryReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
 import { useAppAlert } from "@/components/app-alert-provider";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 type RangeMode = "week" | "month";
 
@@ -45,7 +47,10 @@ function getDateRange(mode: RangeMode, offset: number) {
   }
 }
 
-export default function AbsentAlertScreen() {
+  const { config } = useSchoolConfig();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  
   const { teacher } = useTeacherAuth();
   const appAlert = useAppAlert();
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
@@ -145,7 +150,7 @@ export default function AbsentAlertScreen() {
               onPress={() => setRangeOffset((o) => o - 1)}
               activeOpacity={0.8}
             >
-              <IconSymbol name="chevron.left" size={16} color="#F97316" />
+              <IconSymbol name="chevron.left" size={16} color={palette.primary} />
             </TouchableOpacity>
             <Text style={styles.rangeLabel}>{range.label}</Text>
             <TouchableOpacity
@@ -153,7 +158,7 @@ export default function AbsentAlertScreen() {
               onPress={() => rangeOffset < 0 && setRangeOffset((o) => o + 1)}
               activeOpacity={0.8}
             >
-              <IconSymbol name="chevron.right" size={16} color={rangeOffset >= 0 ? "#D4D4D4" : "#F97316"} />
+              <IconSymbol name="chevron.right" size={16} color={rangeOffset >= 0 ? "#D4D4D4" : palette.primary} />
             </TouchableOpacity>
           </View>
 
@@ -188,7 +193,7 @@ export default function AbsentAlertScreen() {
           </Text>
           {filteredAbsentees.length > 0 && (
             <TouchableOpacity style={styles.exportBtn} onPress={handleExport} activeOpacity={0.8}>
-              <IconSymbol name="square.and.arrow.up" size={13} color="#F97316" />
+              <IconSymbol name="square.and.arrow.up" size={13} color={palette.primary} />
               <Text style={styles.exportBtnText}>PDF</Text>
             </TouchableOpacity>
           )}
@@ -196,7 +201,7 @@ export default function AbsentAlertScreen() {
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#F97316" />
+            <ActivityIndicator size="large" color={palette.primary} />
           </View>
         ) : filteredAbsentees.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -208,7 +213,7 @@ export default function AbsentAlertScreen() {
           <FlatList
             data={filteredAbsentees}
             keyExtractor={(item) => item.studentId}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F97316" />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.primary} />}
             contentContainerStyle={styles.listContent}
             renderItem={({ item, index }) => (
               <View style={styles.studentCard}>
@@ -247,36 +252,39 @@ export default function AbsentAlertScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+  );
+}
+
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   filterBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 10, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
   modeRow: { flexDirection: "row", gap: 8 },
   modeBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: "#F3F4F6" },
-  modeBtnActive: { backgroundColor: "#F97316" },
+  modeBtnActive: { backgroundColor: palette.primary },
   modeBtnText: { fontSize: 13, fontWeight: "600", color: "#78716C" },
   modeBtnTextActive: { color: "#FFFFFF" },
   navRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  navBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#FFF7ED", justifyContent: "center", alignItems: "center" },
+  navBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: palette.surface, justifyContent: "center", alignItems: "center" },
   navBtnDisabled: { backgroundColor: "#F3F4F6" },
   rangeLabel: { flex: 1, textAlign: "center", fontSize: 14, fontWeight: "700", color: "#1C1917" },
   thresholdRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   thresholdLabel: { fontSize: 13, color: "#78716C", fontWeight: "500" },
   thresholdControl: { flexDirection: "row", alignItems: "center", gap: 0, backgroundColor: "#F3F4F6", borderRadius: 8, overflow: "hidden" },
   thresholdBtn: { width: 32, height: 32, justifyContent: "center", alignItems: "center" },
-  thresholdBtnText: { fontSize: 18, fontWeight: "700", color: "#F97316" },
+  thresholdBtnText: { fontSize: 18, fontWeight: "700", color: palette.primary },
   thresholdValue: { minWidth: 28, textAlign: "center", fontSize: 15, fontWeight: "700", color: "#1C1917" },
   listHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
   listHeaderText: { fontSize: 13, fontWeight: "600", color: "#78716C" },
-  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF7ED", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  exportBtnText: { fontSize: 12, fontWeight: "600", color: "#F97316" },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: palette.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  exportBtnText: { fontSize: 12, fontWeight: "600", color: palette.primary },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: "#1C1917" },
   emptySubtitle: { fontSize: 13, color: "#78716C", textAlign: "center", lineHeight: 20 },
   listContent: { padding: 16, gap: 10, paddingBottom: 32 },
   studentCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FFFFFF", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#E7E5E4", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2, elevation: 1 },
-  rankBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#FFF7ED", justifyContent: "center", alignItems: "center" },
-  rankText: { fontSize: 12, fontWeight: "700", color: "#F97316" },
+  rankBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: palette.surface, justifyContent: "center", alignItems: "center" },
+  rankText: { fontSize: 12, fontWeight: "700", color: palette.primary },
   studentInfo: { flex: 1, gap: 2 },
   studentName: { fontSize: 14, fontWeight: "700", color: "#1C1917" },
   studentMeta: { fontSize: 12, color: "#78716C" },

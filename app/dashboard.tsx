@@ -23,11 +23,11 @@ import { useSchoolConfig } from "@/lib/school-config";
 import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 const STATUS_COLORS = {
-  present: { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
-  absent: { label: "ขาด", color: "#DC2626", bg: "#FEE2E2" },
-  late: { label: "สาย", color: "#CA8A04", bg: "#FEF9C3" },
-  leave: { label: "ลา", color: "#2563EB", bg: "#DBEAFE" },
-  sick: { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
+  present: { label: "มา", color: "#059669", bg: "#D1FAE5" },
+  absent: { label: "ขาด", color: "#BE123C", bg: "#FFE4E6" },
+  late: { label: "สาย", color: "#B45309", bg: "#FFEDD5" },
+  leave: { label: "ลา", color: "#4338CA", bg: "#E0E7FF" },
+  sick: { label: "ป่วย", color: "#BE185D", bg: "#FCE7F3" },
 };
 
 

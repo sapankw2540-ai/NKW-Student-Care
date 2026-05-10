@@ -387,11 +387,15 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#F97316',
+    backgroundColor: palette.primary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#FFFFFF',
+  },
+  themeCircleActive: {
+    borderWidth: 3,
+    borderColor: palette.primary,
   },
   inputGroup: {
     gap: 8,
