@@ -21,8 +21,8 @@ const DatabaseConfigContext = createContext<DatabaseConfigContextType | undefine
 const STORAGE_KEY = 'database_config';
 
 const DEFAULT_CONFIG: DatabaseConfig = {
-  type: 'manus',
-  isConfigured: false,
+  type: 'supabase',
+  isConfigured: true,
 };
 
 export function DatabaseConfigProvider({ children }: { children: React.ReactNode }) {
