@@ -1,13 +1,15 @@
-import { ScrollView, Text, View, Pressable, TextInput, Alert } from 'react-native';
+import { ScrollView, Text, View, Pressable, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/screen-container';
 import { useDatabaseConfig } from '@/lib/database-config';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useAppAlert } from '@/components/app-alert-provider';
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const { setConfig } = useDatabaseConfig();
+  const appAlert = useAppAlert();
   const [selectedDb, setSelectedDb] = useState<'manus' | 'supabase'>('manus');
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
@@ -19,7 +21,7 @@ export default function OnboardingScreen() {
 
       if (selectedDb === 'supabase') {
         if (!supabaseUrl.trim() || !supabaseKey.trim()) {
-          Alert.alert('ข้อผิดพลาด', 'กรุณากรอก Supabase URL และ Anon Key');
+          appAlert.show({ title: 'ข้อผิดพลาด', message: 'กรุณากรอก Supabase URL และ Anon Key', type: 'error' });
           return;
         }
 
@@ -32,11 +34,11 @@ export default function OnboardingScreen() {
             },
           });
           if (!response.ok && response.status !== 404) {
-            Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อ Supabase ได้ กรุณาตรวจสอบ URL และ Key');
+            appAlert.show({ title: 'ข้อผิดพลาด', message: 'ไม่สามารถเชื่อมต่อ Supabase ได้ กรุณาตรวจสอบ URL และ Key', type: 'error' });
             return;
           }
         } catch (error) {
-          Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อ Supabase ได้');
+          appAlert.show({ title: 'ข้อผิดพลาด', message: 'ไม่สามารถเชื่อมต่อ Supabase ได้', type: 'error' });
           return;
         }
 
@@ -55,7 +57,7 @@ export default function OnboardingScreen() {
 
       router.replace('/login');
     } catch (error) {
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถบันทึกการตั้งค่าได้');
+      appAlert.show({ title: 'ข้อผิดพลาด', message: 'ไม่สามารถบันทึกการตั้งค่าได้', type: 'error' });
     } finally {
       setIsLoading(false);
     }

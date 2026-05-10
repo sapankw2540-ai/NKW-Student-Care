@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, Modal, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { getThemePalette } from '@/constants/theme-palettes';
 import { useSchoolConfig } from '@/lib/school-config';
@@ -11,11 +11,34 @@ interface LoadingModalProps {
   status: LoadingStatus;
   message?: string;
   onClose?: () => void;
+  autoCloseMs?: number;
+  autoCloseOn?: LoadingStatus[];
+  showActionButton?: boolean;
+  actionLabel?: string;
 }
 
-export function LoadingModal({ visible, status, message, onClose }: LoadingModalProps) {
+export function LoadingModal({
+  visible,
+  status,
+  message,
+  onClose,
+  autoCloseMs,
+  autoCloseOn = ['success', 'error'],
+  showActionButton = true,
+  actionLabel = 'ตกลง',
+}: LoadingModalProps) {
   const { config } = useSchoolConfig();
   const palette = getThemePalette(config.themeColor);
+
+  const shouldAutoClose = useMemo(() => {
+    return Boolean(visible && onClose && autoCloseMs && autoCloseOn.includes(status));
+  }, [autoCloseMs, autoCloseOn, onClose, status, visible]);
+
+  useEffect(() => {
+    if (!shouldAutoClose) return;
+    const t = setTimeout(() => onClose?.(), autoCloseMs);
+    return () => clearTimeout(t);
+  }, [autoCloseMs, onClose, shouldAutoClose]);
 
   const getIcon = () => {
     switch (status) {
@@ -53,13 +76,13 @@ export function LoadingModal({ visible, status, message, onClose }: LoadingModal
           
           <Text style={styles.message}>{message || getDefaultMessage()}</Text>
 
-          {(status === 'success' || status === 'error') && (
+          {showActionButton && !shouldAutoClose && (status === 'success' || status === 'error') && onClose && (
             <TouchableOpacity 
               style={[styles.button, { backgroundColor: status === 'success' ? '#16A34A' : '#DC2626' }]}
               onPress={onClose}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>ตกลง</Text>
+              <Text style={styles.buttonText}>{actionLabel}</Text>
             </TouchableOpacity>
           )}
         </View>

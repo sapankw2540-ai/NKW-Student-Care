@@ -48,7 +48,7 @@ export interface HistoryReportData {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  present: "มาเรียน",
+  present: "มา",
   absent: "ขาด",
   late: "สาย",
   leave: "ลา",
@@ -105,21 +105,85 @@ export function generateClassroomReportHtml(data: ClassroomSummaryData): string 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    @page { margin: 20px; }
-    * { font-family: 'Sarabun', 'Tahoma', sans-serif; box-sizing: border-box; }
-    body { margin: 0; padding: 20px; color: #111; font-size: 14px; }
-    .header { text-align: center; margin-bottom: 20px; border-bottom: 3px solid #f97316; padding-bottom: 16px; }
-    .school-name { font-size: 20px; font-weight: bold; color: #f97316; margin: 0 0 4px; }
-    .system-name { font-size: 13px; color: #6b7280; margin: 0 0 8px; }
-    .report-title { font-size: 16px; font-weight: bold; color: #111; margin: 0; }
-    .meta { display: flex; gap: 24px; justify-content: center; margin-top: 8px; font-size: 13px; color: #374151; }
-    .summary-grid { display: flex; gap: 12px; margin: 16px 0; }
-    .summary-card { flex: 1; padding: 12px; border-radius: 8px; text-align: center; }
-    .summary-card .num { font-size: 24px; font-weight: bold; }
-    .summary-card .label { font-size: 12px; margin-top: 2px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th { background: #f97316; color: white; padding: 10px 12px; text-align: left; font-size: 13px; border: 1px solid #ea580c; }
-    .footer { margin-top: 24px; text-align: right; font-size: 12px; color: #9ca3af; }
+    @page { 
+      size: A4; 
+      margin: 2.5cm; 
+    }
+    * { 
+      font-family: 'Sarabun', 'Tahoma', sans-serif; 
+      box-sizing: border-box; 
+      -webkit-print-color-adjust: exact;
+    }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      color: #111; 
+      font-size: 14px; 
+      line-height: 1.5;
+    }
+    .header { 
+      text-align: center; 
+      margin-bottom: 30px; 
+      border-bottom: 2px solid #f97316; 
+      padding-bottom: 20px; 
+    }
+    .school-name { font-size: 22px; font-weight: bold; color: #f97316; margin: 0 0 5px; }
+    .system-name { font-size: 14px; color: #6b7280; margin: 0 0 10px; }
+    .report-title { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
+    .meta { 
+      display: flex; 
+      gap: 30px; 
+      justify-content: center; 
+      margin-top: 12px; 
+      font-size: 14px; 
+      color: #374151; 
+    }
+    .summary-grid { 
+      display: flex; 
+      gap: 10px; 
+      margin: 20px 0; 
+    }
+    .summary-card { 
+      flex: 1; 
+      padding: 10px; 
+      border-radius: 8px; 
+      text-align: center; 
+      border: 1px solid #e5e7eb;
+    }
+    .summary-card .num { font-size: 20px; font-weight: bold; }
+    .summary-card .label { font-size: 11px; margin-top: 2px; font-weight: 600; }
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-top: 10px; 
+      table-layout: fixed;
+    }
+    th { 
+      background: #f97316; 
+      color: white; 
+      padding: 12px 8px; 
+      text-align: left; 
+      font-size: 13px; 
+      border: 1px solid #ea580c; 
+    }
+    td { 
+      padding: 10px 8px; 
+      border: 1px solid #e5e7eb; 
+      word-wrap: break-word;
+    }
+    tr { page-break-inside: avoid; }
+    .footer { 
+      margin-top: 40px; 
+      text-align: right; 
+      font-size: 12px; 
+      color: #9ca3af; 
+      border-top: 1px solid #f3f4f6;
+      padding-top: 10px;
+    }
+    @media print {
+      @page { size: A4; margin: 2.5cm; }
+      body { margin: 0; }
+    }
   </style>
 </head>
 <body>
@@ -137,7 +201,7 @@ export function generateClassroomReportHtml(data: ClassroomSummaryData): string 
   <div class="summary-grid">
     <div class="summary-card" style="background:#f0fdf4;">
       <div class="num" style="color:#16a34a;">${data.present}</div>
-      <div class="label" style="color:#16a34a;">มาเรียน</div>
+      <div class="label" style="color:#16a34a;">มา</div>
     </div>
     <div class="summary-card" style="background:#fef2f2;">
       <div class="num" style="color:#dc2626;">${data.absent}</div>
@@ -211,17 +275,64 @@ export function generateHistoryReportHtml(data: HistoryReportData): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    @page { margin: 20px; }
-    * { font-family: 'Sarabun', 'Tahoma', sans-serif; box-sizing: border-box; }
-    body { margin: 0; padding: 20px; color: #111; font-size: 13px; }
-    .header { text-align: center; margin-bottom: 20px; border-bottom: 3px solid #f97316; padding-bottom: 16px; }
-    .school-name { font-size: 20px; font-weight: bold; color: #f97316; margin: 0 0 4px; }
+    @page { 
+      size: A4; 
+      margin: 2.5cm; 
+    }
+    * { 
+      font-family: 'Sarabun', 'Tahoma', sans-serif; 
+      box-sizing: border-box; 
+      -webkit-print-color-adjust: exact;
+    }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      color: #111; 
+      font-size: 13px; 
+      line-height: 1.4;
+    }
+    .header { 
+      text-align: center; 
+      margin-bottom: 25px; 
+      border-bottom: 2px solid #f97316; 
+      padding-bottom: 15px; 
+    }
+    .school-name { font-size: 22px; font-weight: bold; color: #f97316; margin: 0 0 4px; }
     .system-name { font-size: 13px; color: #6b7280; margin: 0 0 8px; }
-    .report-title { font-size: 16px; font-weight: bold; color: #111; margin: 0; }
-    .meta { font-size: 13px; color: #374151; margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th { background: #f97316; color: white; padding: 10px 12px; text-align: center; font-size: 12px; border: 1px solid #ea580c; }
-    .footer { margin-top: 24px; text-align: right; font-size: 12px; color: #9ca3af; }
+    .report-title { font-size: 17px; font-weight: bold; color: #111; margin: 0; }
+    .meta { font-size: 14px; color: #374151; margin-top: 10px; font-weight: 500; }
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-top: 15px; 
+      table-layout: fixed;
+    }
+    th { 
+      background: #f97316; 
+      color: white; 
+      padding: 10px 6px; 
+      text-align: center; 
+      font-size: 12px; 
+      border: 1px solid #ea580c; 
+    }
+    td { 
+      padding: 8px 6px; 
+      border: 1px solid #e5e7eb; 
+      word-wrap: break-word;
+    }
+    tr { page-break-inside: avoid; }
+    .footer { 
+      margin-top: 30px; 
+      text-align: right; 
+      font-size: 11px; 
+      color: #9ca3af; 
+      border-top: 1px solid #f3f4f6;
+      padding-top: 8px;
+    }
+    @media print {
+      @page { size: A4; margin: 2.5cm; }
+      body { margin: 0; }
+    }
   </style>
 </head>
 <body>
@@ -237,7 +348,7 @@ export function generateHistoryReportHtml(data: HistoryReportData): string {
       <tr>
         <th>วันที่</th>
         <th>ช่วงเวลา</th>
-        <th style="color:#bbf7d0;">มาเรียน</th>
+        <th style="color:#bbf7d0;">มา</th>
         <th style="color:#fecaca;">ขาด</th>
         <th style="color:#fde68a;">สาย</th>
         <th style="color:#bfdbfe;">ลา</th>
@@ -252,7 +363,7 @@ export function generateHistoryReportHtml(data: HistoryReportData): string {
   </table>
 
   <div class="footer">
-    พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")} | เวอร์ชัน 4.0.0
+    พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")} | เวอร์ชัน v4.5.10
   </div>
 </body>
 </html>`;
@@ -266,8 +377,8 @@ export async function exportPdfAndShare(
   filename: string
 ): Promise<void> {
   if (Platform.OS === "web") {
-    // On web, open print dialog
-    await Print.printAsync({});
+    // On web, open print dialog with the specific HTML content
+    await Print.printAsync({ html });
     return;
   }
 

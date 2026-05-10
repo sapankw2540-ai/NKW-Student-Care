@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, TextInput, Image, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, TextInput, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { ScreenContainer } from '@/components/screen-container';
 import { AppHeader } from '@/components/app-header';
 import { useSchoolConfig } from '@/lib/school-config';
@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { trpc } from '@/lib/trpc';
 import { useTeacherAuth } from '@/lib/teacher-auth';
 import { LoadingModal, LoadingStatus } from '@/components/loading-modal';
+import { useAppAlert } from '@/components/app-alert-provider';
 
 const THEME_COLORS = {
   orange: { primary: '#F97316', name: 'ส้ม', bg: '#FFF7ED' },
@@ -20,6 +21,7 @@ const THEME_COLORS = {
 export default function SettingsScreen() {
   const { config, setConfig } = useSchoolConfig();
   const { teacher } = useTeacherAuth();
+  const appAlert = useAppAlert();
   const isAdmin = teacher?.role === 'admin';
   const palette = getThemePalette(config.themeColor);
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -38,12 +40,14 @@ export default function SettingsScreen() {
   // Modal states
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
   const [loadMessage, setLoadMessage] = useState('');
+  const [showLineConfig, setShowLineConfig] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const uploadMutation = trpc.uploadLogo.useMutation();
 
   const handleSave = async () => {
     if (!schoolName.trim()) {
-      Alert.alert('ข้อผิดพลาด', 'กรุณากรอกชื่อโรงเรียน');
+      appAlert.show({ title: 'ข้อผิดพลาด', message: 'กรุณากรอกชื่อโรงเรียน', type: 'error' });
       return;
     }
 
@@ -105,7 +109,7 @@ export default function SettingsScreen() {
         setLogoBase64(result.assets[0].base64);
       }
     } catch (error) {
-      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเลือกรูปภาพได้');
+      appAlert.show({ title: 'ข้อผิดพลาด', message: 'ไม่สามารถเลือกรูปภาพได้', type: 'error' });
     }
   };
 
@@ -122,132 +126,146 @@ export default function SettingsScreen() {
 
       <ScreenContainer edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* School Logo Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>ข้อมูลพื้นฐาน</Text>
-            
-            <View style={styles.logoSection}>
-              <TouchableOpacity onPress={handlePickImage} activeOpacity={0.7} style={styles.logoContainer} disabled={!isAdmin}>
-                {logoUrl ? (
-                  <Image source={{ uri: logoUrl }} style={styles.logoImage} />
-                ) : (
-                  <View style={styles.logoPlaceholder}>
-                    <IconSymbol name="photo.fill" size={40} color="#A8A29E" />
-                    <Text style={styles.logoPlaceholderText}>เลือกตราโรงเรียน</Text>
-                  </View>
-                )}
-                {isAdmin && (
+          {/* School Basic Info Section (Only for Admin) */}
+          {isAdmin && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>ข้อมูลพื้นฐาน</Text>
+              
+              <View style={styles.logoSection}>
+                <TouchableOpacity onPress={handlePickImage} activeOpacity={0.7} style={styles.logoContainer}>
+                  {logoUrl ? (
+                    <Image source={{ uri: logoUrl }} style={styles.logoImage} />
+                  ) : (
+                    <View style={styles.logoPlaceholder}>
+                      <IconSymbol name="photo.fill" size={40} color="#A8A29E" />
+                      <Text style={styles.logoPlaceholderText}>เลือกตราโรงเรียน</Text>
+                    </View>
+                  )}
                   <View style={styles.editBadge}>
                     <IconSymbol name="pencil" size={12} color="#FFFFFF" />
                   </View>
+                </TouchableOpacity>
+                {logoBase64 && <Text style={styles.hint}>มีรูปภาพใหม่ที่ยังไม่ได้บันทึก</Text>}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>ชื่อโรงเรียน</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    placeholder="กรุณากรอกชื่อโรงเรียน"
+                    value={schoolName}
+                    onChangeText={setSchoolName}
+                    style={styles.input}
+                    placeholderTextColor="#A8A29E"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>จังหวัด</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    placeholder="กรุณากรอกจังหวัด"
+                    value={province}
+                    onChangeText={setProvince}
+                    style={styles.input}
+                    placeholderTextColor="#A8A29E"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>ภาคเรียนที่</Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      placeholder="เช่น 1"
+                      value={semester}
+                      onChangeText={setSemester}
+                      style={styles.input}
+                      placeholderTextColor="#A8A29E"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>ปีการศึกษา</Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      placeholder="เช่น 2569"
+                      value={academicYear}
+                      onChangeText={setAcademicYear}
+                      style={styles.input}
+                      placeholderTextColor="#A8A29E"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>เวอร์ชันระบบ</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    placeholder="เช่น v4.5.9"
+                    value={version}
+                    onChangeText={setVersion}
+                    style={styles.input}
+                    placeholderTextColor="#A8A29E"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <TouchableOpacity 
+                  style={styles.lineHeader} 
+                  onPress={() => setShowLineConfig(!showLineConfig)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.sectionTitle}>LINE Messaging API</Text>
+                  <IconSymbol 
+                    name={showLineConfig ? "chevron.up" : "chevron.down"} 
+                    size={20} 
+                    color="#1C1917" 
+                  />
+                </TouchableOpacity>
+
+                {showLineConfig && (
+                  <View style={styles.lineConfigContent}>
+                    <Text style={styles.label}>Channel Access Token</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        placeholder="Channel Access Token"
+                        value={lineChannelAccessToken}
+                        onChangeText={setLineChannelAccessToken}
+                        style={[styles.input, { flex: 1 }]}
+                        placeholderTextColor="#A8A29E"
+                        autoCapitalize="none"
+                        secureTextEntry={!showToken}
+                        multiline={showToken}
+                      />
+                      <TouchableOpacity onPress={() => setShowToken(!showToken)} style={styles.eyeBtn}>
+                        <IconSymbol name={showToken ? "eye.slash.fill" : "eye.fill"} size={20} color="#78716C" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={[styles.label, { marginTop: 12 }]}>Target ID (User/Group/Room)</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        placeholder="Target ID (User/Group/Room)"
+                        value={lineTargetId}
+                        onChangeText={setLineTargetId}
+                        style={styles.input}
+                        placeholderTextColor="#A8A29E"
+                        autoCapitalize="none"
+                      />
+                    </View>
+                    <Text style={styles.hint}>* ใช้สำหรับส่งข้อความสรุปการเช็คชื่อผ่าน Messaging API</Text>
+                  </View>
                 )}
-              </TouchableOpacity>
-              {logoBase64 && <Text style={styles.hint}>มีรูปภาพใหม่ที่ยังไม่ได้บันทึก</Text>}
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>ชื่อโรงเรียน</Text>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
-                <TextInput
-                  placeholder="กรุณากรอกชื่อโรงเรียน"
-                  value={schoolName}
-                  onChangeText={setSchoolName}
-                  style={[styles.input, !isAdmin && styles.inputDisabled]}
-                  placeholderTextColor="#A8A29E"
-                  editable={isAdmin}
-                />
               </View>
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>จังหวัด</Text>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
-                <TextInput
-                  placeholder="กรุณากรอกจังหวัด"
-                  value={province}
-                  onChangeText={setProvince}
-                  style={[styles.input, !isAdmin && styles.inputDisabled]}
-                  placeholderTextColor="#A8A29E"
-                  editable={isAdmin}
-                />
-              </View>
-            </View>
-
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>ภาคเรียนที่</Text>
-                <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
-                  <TextInput
-                    placeholder="เช่น 1"
-                    value={semester}
-                    onChangeText={setSemester}
-                    style={[styles.input, !isAdmin && styles.inputDisabled]}
-                    placeholderTextColor="#A8A29E"
-                    keyboardType="numeric"
-                    editable={isAdmin}
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>ปีการศึกษา</Text>
-                <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
-                  <TextInput
-                    placeholder="เช่น 2569"
-                    value={academicYear}
-                    onChangeText={setAcademicYear}
-                    style={[styles.input, !isAdmin && styles.inputDisabled]}
-                    placeholderTextColor="#A8A29E"
-                    keyboardType="numeric"
-                    editable={isAdmin}
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>เวอร์ชันระบบ</Text>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled]}>
-                <TextInput
-                  placeholder="เช่น v4.5.9"
-                  value={version}
-                  onChangeText={setVersion}
-                  style={[styles.input, !isAdmin && styles.inputDisabled]}
-                  placeholderTextColor="#A8A29E"
-                  editable={isAdmin}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>LINE Messaging API</Text>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled, { height: 'auto', minHeight: 56, paddingVertical: 8 }]}>
-                <TextInput
-                  placeholder={isAdmin ? "Channel Access Token" : "••••••••••••••••"}
-                  value={lineChannelAccessToken}
-                  onChangeText={setLineChannelAccessToken}
-                  style={[styles.input, !isAdmin && styles.inputDisabled]}
-                  placeholderTextColor="#A8A29E"
-                  autoCapitalize="none"
-                  secureTextEntry
-                  editable={isAdmin}
-                  multiline={isAdmin}
-                />
-              </View>
-              <View style={[styles.inputWrapper, !isAdmin && styles.inputWrapperDisabled, { marginTop: 8 }]}>
-                <TextInput
-                  placeholder={isAdmin ? "Target ID (User/Group/Room)" : "••••••••••••••••"}
-                  value={lineTargetId}
-                  onChangeText={setLineTargetId}
-                  style={[styles.input, !isAdmin && styles.inputDisabled]}
-                  placeholderTextColor="#A8A29E"
-                  autoCapitalize="none"
-                  editable={isAdmin}
-                />
-              </View>
-              <Text style={styles.hint}>* {isAdmin ? "ใช้สำหรับส่งข้อความสรุปการเช็คชื่อผ่าน Messaging API" : "เฉพาะแอดมินเท่านั้นที่สามารถแก้ไขได้"}</Text>
-            </View>
-
-          </View>
+          )}
 
           {/* Theme Section */}
           <View style={styles.section}>
@@ -277,15 +295,7 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Info Card */}
-          <View style={styles.infoCard}>
-            <IconSymbol name="info.circle.fill" size={20} color={palette.primary} />
-            <Text style={styles.infoText}>
-              {isAdmin 
-                ? "ข้อมูลการตั้งค่าจะถูกส่งไปที่ฐานข้อมูลกลางเพื่อให้ทุกคนเห็นตรงกัน" 
-                : "คุณสามารถปรับเปลี่ยนสีธีมได้เฉพาะเครื่องของคุณเท่านั้น ส่วนข้อมูลโรงเรียนเฉพาะแอดมินที่มีสิทธิ์แก้ไข"}
-            </Text>
-          </View>
+
 
           <View style={styles.footerInfo}>
             <Text style={styles.versionText}>{config.schoolName} {config.version}</Text>
@@ -498,5 +508,22 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   devText: {
     fontSize: 10,
     color: '#D6D3D1',
+  },
+  lineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E7E5E4',
+    marginBottom: 8,
+  },
+  lineConfigContent: {
+    gap: 8,
+    marginTop: 8,
+  },
+  eyeBtn: {
+    padding: 8,
+    marginLeft: 4,
   },
 });

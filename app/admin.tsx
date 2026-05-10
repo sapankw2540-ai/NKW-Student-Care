@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
-  Alert,
   ActivityIndicator,
   Modal,
   Switch,
@@ -21,6 +20,7 @@ import { router } from "expo-router";
 import { formatClassroomId, formatClassroomIds, formatDateForApi, toThaiDateShort, toThaiDateNumeric } from "@/lib/thai-date";
 import { DatePickerModal } from "@/components/date-picker-modal";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
+import { useAppAlert } from "@/components/app-alert-provider";
 import * as DocumentPicker from "expo-document-picker";
 import * as XLSX from "xlsx";
 import { Platform } from "react-native";
@@ -94,8 +94,9 @@ const emptyStudentForm: StudentFormData = {
 };
 
 const PERIOD_NAMES: Record<string, string> = {
-  morning: "เช้า",
+  morning: "กิจกรรมหน้าเสาธง",
   noon: "กลางวัน",
+  afternoon: "กิจกรรมก่อนเรียนคาบบ่าย",
   evening: "บ่าย",
 };
 
@@ -109,6 +110,7 @@ const STATUS_OPTIONS = [
 
 export default function AdminScreen() {
   const { teacher } = useTeacherAuth();
+  const appAlert = useAppAlert();
   const [activeTab, setActiveTab] = useState<AdminTab>("teachers");
 
   // Teacher modal state
@@ -136,6 +138,11 @@ export default function AdminScreen() {
     students: Array<{ student_id: string; status: string; reason: string }>;
   } | null>(null);
 
+  // Manual Report state
+  const [summaryEndDate, setSummaryEndDate] = useState(formatDateForApi(new Date()));
+  const [summaryPeriod, setSummaryPeriod] = useState<string | null>(null);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
   // Loading modal state
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>("idle");
   const [loadingVisible, setLoadingVisible] = useState(false);
@@ -144,10 +151,10 @@ export default function AdminScreen() {
   // Redirect non-admin
   React.useEffect(() => {
     if (teacher && teacher.role !== "admin") {
-      Alert.alert("ไม่มีสิทธิ์", "เฉพาะผู้ดูแลระบบเท่านั้น");
+      appAlert.show({ title: "ไม่มีสิทธิ์", message: "เฉพาะผู้ดูแลระบบเท่านั้น", type: "error" });
       router.replace("/(tabs)");
     }
-  }, [teacher]);
+  }, [appAlert, teacher]);
 
   const utils = trpc.useUtils();
 
@@ -193,7 +200,7 @@ export default function AdminScreen() {
   const { data: allPeriods = [], isLoading: loadingPeriods, refetch: refetchPeriods } = trpc.allPeriods.useQuery();
   const updatePeriodMutation = trpc.updatePeriodStatus.useMutation({
     onSuccess: () => refetchPeriods(),
-    onError: (e) => Alert.alert("เกิดข้อผิดพลาด", e.message),
+    onError: (e) => appAlert.show({ title: "เกิดข้อผิดพลาด", message: e.message, type: "error" }),
   });
 
   // ===== Classrooms =====
@@ -261,11 +268,15 @@ export default function AdminScreen() {
     },
   });
 
-  const handleSendSummary = (period?: string) => {
+  const handleSendSummary = () => {
     setLoadingStatus("loading");
     setLoadingVisible(true);
     setLoadingMessage("กำลังคำนวณและส่งสรุป...");
-    sendSummaryMutation.mutate({ date: recordsDate, period });
+    sendSummaryMutation.mutate({ 
+      startDate: recordsDate, 
+      endDate: summaryEndDate, 
+      period: summaryPeriod || undefined 
+    });
   };
 
   // ===== Attendance Records =====
@@ -279,8 +290,13 @@ export default function AdminScreen() {
   });
   const updateAttendanceMutation = trpc.updateAttendanceRecord.useMutation({
     onSuccess: () => {
-      setLoadingStatus("success");
-      setLoadingMessage("แก้ไขบันทึกเรียบร้อยแล้ว");
+      setLoadingVisible(false);
+      appAlert.show({
+        title: "สำเร็จ",
+        message: "แก้ไขบันทึกเรียบร้อยแล้ว",
+        type: "success",
+        autoCloseMs: 3000,
+      });
       setEditAttendanceModal(false);
       refetchRecords();
     },
@@ -291,8 +307,14 @@ export default function AdminScreen() {
   });
   const deleteAttendanceMutation = trpc.deleteAttendance.useMutation({
     onSuccess: () => {
-      setLoadingStatus("success");
-      setLoadingMessage("ลบบันทึกเรียบร้อยแล้ว");
+      setLoadingVisible(false);
+      appAlert.show({
+        title: "สำเร็จ",
+        message: "ลบบันทึกเรียบร้อยแล้ว",
+        type: "success",
+        autoCloseMs: 3000,
+      });
+      setEditAttendanceModal(false);
       refetchRecords();
     },
     onError: (e) => {
@@ -323,11 +345,11 @@ export default function AdminScreen() {
 
   const handleSaveTeacher = () => {
     if (!teacherForm.name.trim() || !teacherForm.username.trim()) {
-      Alert.alert("แจ้งเตือน", "กรุณากรอกชื่อและชื่อผู้ใช้");
+      appAlert.show({ title: "แจ้งเตือน", message: "กรุณากรอกชื่อและชื่อผู้ใช้", type: "info" });
       return;
     }
     if (!isEditingTeacher && !teacherForm.password.trim()) {
-      Alert.alert("แจ้งเตือน", "กรุณากรอกรหัสผ่าน");
+      appAlert.show({ title: "แจ้งเตือน", message: "กรุณากรอกรหัสผ่าน", type: "info" });
       return;
     }
     if (isEditingTeacher && teacherForm.id) {
@@ -351,41 +373,54 @@ export default function AdminScreen() {
   };
 
   const handleDeleteTeacher = (id: number, name: string) => {
-    Alert.alert("ยืนยันการลบ", `ต้องการปิดใช้งานบัญชี "${name}" หรือไม่? ข้อมูลจะไม่ถูกลบออกจากฐานข้อมูล แต่จะไม่สามารถเข้าสู่ระบบได้`, [
-      { text: "ยกเลิก", style: "cancel" },
-      { 
-        text: "ปิดใช้งาน", 
-        style: "destructive", 
-        onPress: () => {
-          setLoadingStatus("loading");
-          setLoadingVisible(true);
-          setLoadingMessage("กำลังดำเนินการ...");
-          deleteTeacherMutation.mutate({ id });
-        } 
-      },
-    ]);
+    const message = `ต้องการปิดใช้งานบัญชี "${name}" หรือไม่? ข้อมูลจะไม่ถูกลบออกจากฐานข้อมูล แต่จะไม่สามารถเข้าสู่ระบบได้`;
+
+    appAlert.show({
+      title: "ยืนยันการลบ",
+      message,
+      type: "info",
+      actions: [
+        { label: "ยกเลิก", variant: "secondary" },
+        {
+          label: "ปิดใช้งาน",
+          variant: "danger",
+          onPress: () => {
+            setLoadingStatus("loading");
+            setLoadingVisible(true);
+            setLoadingMessage("กำลังดำเนินการ...");
+            deleteTeacherMutation.mutate({ id });
+          },
+        },
+      ],
+    });
   };
 
   const handleResetPassword = (t: typeof teachers[0]) => {
-    Alert.alert("รีเซ็ตรหัสผ่าน", `ต้องการรีเซ็ตรหัสผ่านของ "${t.name}" เป็น "123456" หรือไม่?`, [
-      { text: "ยกเลิก", style: "cancel" },
-      {
-        text: "รีเซ็ต",
-        onPress: () => {
-          setLoadingStatus("loading");
-          setLoadingVisible(true);
-          setLoadingMessage("กำลังรีเซ็ต...");
-          updateTeacherMutation.mutate({
-            id: t.id,
-            name: t.name,
-            username: t.username,
-            password: "123456",
-            role: t.role as "teacher" | "admin" | "viewer",
-            classroomIds: t.classroomIds || "",
-          });
+    appAlert.show({
+      title: "รีเซ็ตรหัสผ่าน",
+      message: `ต้องการรีเซ็ตรหัสผ่านของ "${t.name}" เป็น "123456" หรือไม่?`,
+      type: "info",
+      actions: [
+        { label: "ยกเลิก", variant: "secondary" },
+        {
+          label: "รีเซ็ต",
+          variant: "primary",
+          onPress: () => {
+            setLoadingStatus("loading");
+            setLoadingVisible(true);
+            setLoadingMessage("กำลังรีเซ็ต...");
+            updateTeacherMutation.mutate({
+              id: t.id,
+              name: t.name,
+              username: t.username,
+              password: "123456",
+              role: t.role as "teacher" | "admin" | "viewer",
+              classroomIds: t.classroomIds || "",
+            });
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   const toggleClassroom = (roomId: string) => {
@@ -425,7 +460,7 @@ export default function AdminScreen() {
 
   const handleSaveStudent = () => {
     if (!studentForm.name.trim() || !studentForm.studentId.trim() || !studentForm.classroomId) {
-      Alert.alert("แจ้งเตือน", "กรุณากรอกข้อมูลให้ครบถ้วน");
+      appAlert.show({ title: "แจ้งเตือน", message: "กรุณากรอกข้อมูลให้ครบถ้วน", type: "info" });
       return;
     }
     if (isEditingStudent && studentForm.id) {
@@ -447,19 +482,26 @@ export default function AdminScreen() {
   };
 
   const handleDeleteStudent = (id: number, name: string) => {
-    Alert.alert("ยืนยันการลบ", `ต้องการลบ "${name}" ออกจากระบบหรือไม่?`, [
-      { text: "ยกเลิก", style: "cancel" },
-      { 
-        text: "ลบ", 
-        style: "destructive", 
-        onPress: () => {
-          setLoadingStatus("loading");
-          setLoadingVisible(true);
-          setLoadingMessage("กำลังลบ...");
-          deleteStudentMutation.mutate({ id });
-        } 
-      },
-    ]);
+    const message = `ต้องการลบ "${name}" ออกจากระบบหรือไม่?`;
+
+    appAlert.show({
+      title: "ยืนยันการลบ",
+      message,
+      type: "info",
+      actions: [
+        { label: "ยกเลิก", variant: "secondary" },
+        {
+          label: "ลบ",
+          variant: "danger",
+          onPress: () => {
+            setLoadingStatus("loading");
+            setLoadingVisible(true);
+            setLoadingMessage("กำลังลบ...");
+            deleteStudentMutation.mutate({ id });
+          },
+        },
+      ],
+    });
   };
 
   const handleImportStudents = async () => {
@@ -618,23 +660,24 @@ export default function AdminScreen() {
   };
 
   const handleDeleteRecord = (id: number, date: string, roomId: string) => {
-    Alert.alert(
-      "ยืนยันการลบ",
-      `ต้องการลบบันทึกการเช็คชื่อ ${formatClassroomId(roomId)} วันที่ ${toThaiDateShort(new Date(date + "T00:00:00"))} หรือไม่?`,
-      [
-        { text: "ยกเลิก", style: "cancel" },
-        { 
-          text: "ลบ", 
-          style: "destructive", 
+    appAlert.show({
+      title: "ยืนยันการลบ",
+      message: `ต้องการลบบันทึกการเช็คชื่อ ${formatClassroomId(roomId)} วันที่ ${toThaiDateShort(new Date(date + "T00:00:00"))} หรือไม่?`,
+      type: "info",
+      actions: [
+        { label: "ยกเลิก", variant: "secondary" },
+        {
+          label: "ลบ",
+          variant: "danger",
           onPress: () => {
             setLoadingStatus("loading");
             setLoadingVisible(true);
             setLoadingMessage("กำลังลบ...");
             deleteAttendanceMutation.mutate({ id });
-          } 
+          },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const updateStudentStatus = (studentId: string, status: string) => {
@@ -664,13 +707,13 @@ export default function AdminScreen() {
   };
 
   const handleSaveAttendance = () => {
-    if (!editingRecord) return;
+    if (!editingRecord || !teacher) return;
     setLoadingStatus("loading");
     setLoadingVisible(true);
     setLoadingMessage("กำลังบันทึก...");
     updateAttendanceMutation.mutate({
       id: editingRecord.id,
-      teacher: editingRecord.teacher,
+      teacher: teacher.username,
       students: editingRecord.students,
     });
   };
@@ -750,7 +793,7 @@ export default function AdminScreen() {
                         )}
                       </View>
                     </View>
-                    {item.status === 1 && item.role !== "admin" && (
+                    {item.status === 1 && (item.id !== teacher?.id) && (
                       <View style={styles.teacherActions}>
                         <TouchableOpacity 
                           style={styles.resetBtn} 
@@ -892,83 +935,119 @@ export default function AdminScreen() {
         {/* ===== Records Tab ===== */}
         {activeTab === "records" && (
           <View style={styles.tabContent}>
-            {/* Date + Room filter */}
-            <View style={styles.recordsFilterBar}>
-              <TouchableOpacity 
-                style={styles.recordsDateRow}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <IconSymbol name="calendar" size={16} color="#F97316" />
-                <Text style={styles.recordsDateText}>
-                  {toThaiDateNumeric(new Date(recordsDate + "T00:00:00"))}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <FlatList
+              data={attendanceRecords}
+              keyExtractor={(item) => String(item.id)}
+              ListHeaderComponent={
+                <View>
+                  {/* Date + Room filter */}
+                  <View style={styles.recordsFilterBar}>
+                    <TouchableOpacity 
+                      style={styles.recordsDateRow}
+                      onPress={() => setShowDatePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <IconSymbol name="calendar" size={16} color="#F97316" />
+                      <Text style={styles.recordsDateText}>
+                        {toThaiDateNumeric(new Date(recordsDate + "T00:00:00"))}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
-            {/* LINE Summary Section */}
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryHeader}>
-                <IconSymbol name="bell.fill" size={20} color="#16A34A" />
-                <Text style={styles.summaryTitle}>ส่งสรุปรายงานเข้า LINE</Text>
-              </View>
-              <View style={styles.summaryActions}>
-                <TouchableOpacity 
-                  style={[styles.summaryBtn, { backgroundColor: "#16A34A" }]} 
-                  onPress={() => handleSendSummary()}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.summaryBtnText}>สรุปทั้งวัน</Text>
-                </TouchableOpacity>
-                {allPeriods.filter(p => p.status === 1).map(p => (
-                  <TouchableOpacity 
-                    key={p.id}
-                    style={[styles.summaryBtn, { backgroundColor: "#2563EB" }]} 
-                    onPress={() => handleSendSummary(p.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.summaryBtnText}>สรุป{p.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.summaryHint}>* ระบบจะส่งสถิติสรุปภาพรวมไปยัง LINE ตามข้อมูลวันที่เลือก</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-              <TouchableOpacity
-                style={[styles.filterChip, recordsRoomFilter === "all" && styles.filterChipActive]}
-                onPress={() => setRecordsRoomFilter("all")}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.filterChipText, recordsRoomFilter === "all" && styles.filterChipTextActive]}>ทุกห้อง</Text>
-              </TouchableOpacity>
-              {classrooms.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.filterChip, recordsRoomFilter === c.id && styles.filterChipActive]}
-                  onPress={() => setRecordsRoomFilter(c.id)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.filterChipText, recordsRoomFilter === c.id && styles.filterChipTextActive]}>
-                    {formatClassroomId(c.id)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {loadingRecords ? (
-              <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
-            ) : (
-              <FlatList
-                data={attendanceRecords}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item }) => {
-                  const studs = (item.students as Array<{ student_id: string; status: string; reason: string }>) ?? [];
-                  const presentCount = studs.filter((s) => s.status === "มา").length;
-                  const absentCount = studs.filter((s) => s.status === "ขาด").length;
-                  return (
-                    <View style={styles.recordCard}>
-                      <View style={styles.recordHeader}>
-                        <View style={styles.recordInfo}>
-                          <Text style={styles.recordRoom}>{formatClassroomId(item.roomId)}</Text>
+                  {/* LINE Summary Section */}
+                  <View style={[styles.summaryCard, { backgroundColor: "#FDFCFB", borderColor: "#FED7AA" }]}>
+                    <View style={styles.summaryHeader}>
+                      <IconSymbol name="bell.fill" size={20} color="#F97316" />
+                      <Text style={[styles.summaryTitle, { color: "#9A3412" }]}>ส่งสรุปรายงานการบันทึก (LINE)</Text>
+                    </View>
+                    
+                    <View style={styles.summaryForm}>
+                      <View style={styles.rangeRow}>
+                        <View style={styles.rangeCol}>
+                          <Text style={styles.rangeLabel}>ตั้งแต่วันที่</Text>
+                          <TouchableOpacity style={styles.rangeBtn} onPress={() => setShowDatePicker(true)}>
+                            <Text style={styles.rangeBtnText}>{toThaiDateShort(new Date(recordsDate + "T00:00:00"))}</Text>
+                            <IconSymbol name="calendar" size={14} color="#F97316" />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.rangeCol}>
+                          <Text style={styles.rangeLabel}>ถึงวันที่</Text>
+                          <TouchableOpacity style={styles.rangeBtn} onPress={() => setShowEndDatePicker(true)}>
+                            <Text style={styles.rangeBtnText}>{toThaiDateShort(new Date(summaryEndDate + "T00:00:00"))}</Text>
+                            <IconSymbol name="calendar" size={14} color="#F97316" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      <View style={styles.periodRow}>
+                        <Text style={styles.rangeLabel}>กิจกรรม/ช่วงเวลา</Text>
+                        <View style={styles.periodChips}>
+                          <TouchableOpacity 
+                            style={[styles.periodChip, summaryPeriod === null && styles.periodChipActive]} 
+                            onPress={() => setSummaryPeriod(null)}
+                          >
+                            <Text style={[styles.periodChipText, summaryPeriod === null && styles.periodChipTextActive]}>ทั้งหมด</Text>
+                          </TouchableOpacity>
+                          {allPeriods.filter(p => p.status === 1).map(p => (
+                            <TouchableOpacity 
+                              key={p.id}
+                              style={[styles.periodChip, summaryPeriod === p.id && styles.periodChipActive]} 
+                              onPress={() => setSummaryPeriod(p.id)}
+                            >
+                              <Text style={[styles.periodChipText, summaryPeriod === p.id && styles.periodChipTextActive]}>{p.name}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      <TouchableOpacity 
+                        style={[styles.mainSendBtn, { backgroundColor: "#F97316" }]} 
+                        onPress={handleSendSummary}
+                        activeOpacity={0.8}
+                      >
+                        <IconSymbol name="paperplane.fill" size={16} color="#FFFFFF" />
+                        <Text style={styles.mainSendBtnText}>ส่งรายงานเข้า LINE Messaging</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[styles.summaryHint, { color: "#9A3412" }]}>* ข้อมูลจะสรุปยอดรวมและอัตราส่วนร้อยละตามช่วงเวลาที่เลือก</Text>
+                  </View>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
+                    <TouchableOpacity
+                      style={[styles.filterChip, recordsRoomFilter === "all" && styles.filterChipActive]}
+                      onPress={() => setRecordsRoomFilter("all")}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.filterChipText, recordsRoomFilter === "all" && styles.filterChipTextActive]}>ทุกห้อง</Text>
+                    </TouchableOpacity>
+                    {classrooms.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.filterChip, recordsRoomFilter === c.id && styles.filterChipActive]}
+                        onPress={() => setRecordsRoomFilter(c.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.filterChipText, recordsRoomFilter === c.id && styles.filterChipTextActive]}>
+                          {formatClassroomId(c.id)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  {loadingRecords && (
+                    <ActivityIndicator size="large" color="#F97316" style={{ marginTop: 40 }} />
+                  )}
+                </View>
+              }
+              renderItem={({ item }) => {
+                const studs = (item.students as Array<{ student_id: string; status: string; reason: string }>) ?? [];
+                const presentCount = studs.filter((s) => s.status === "มา").length;
+                const absentCount = studs.filter((s) => s.status === "ขาด").length;
+                return (
+                  <View style={styles.recordCard}>
+                    <View style={styles.recordHeader}>
+                      <View style={styles.recordInfo}>
+                        <Text style={styles.recordRoom}>{formatClassroomId(item.roomId)}</Text>
                           <Text style={styles.recordMeta}>
                             {toThaiDateNumeric(new Date(item.date + "T00:00:00"))} • {PERIOD_NAMES[item.period] ?? item.period}
                           </Text>
@@ -1011,9 +1090,17 @@ export default function AdminScreen() {
                   </View>
                 }
               />
-            )}
           </View>
         )}
+        <DatePickerModal
+          visible={showEndDatePicker}
+          selectedDate={summaryEndDate}
+          onClose={() => setShowEndDatePicker(false)}
+          onSelect={(date) => {
+            setSummaryEndDate(date);
+            setShowEndDatePicker(false);
+          }}
+        />
       </ScreenContainer>
 
       {/* ===== Teacher Form Modal ===== */}
@@ -1210,13 +1297,7 @@ export default function AdminScreen() {
         onClose={() => setLoadingVisible(false)}
       />
 
-      <ConfirmModal
-        visible={deleteModalVisible}
-        title="ยืนยันการลบ"
-        message="คุณต้องการลบข้อมูลนี้ใช่หรือไม่?"
-        onConfirm={handleDeleteAttendance}
-        onCancel={() => setDeleteModalVisible(false)}
-      />
+
 
       <DatePickerModal
         visible={showDatePicker}
@@ -1272,13 +1353,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   addButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
-  filterScroll: { flexGrow: 0 },
-  filterRow: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, gap: 8, flexDirection: "row" },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "transparent" },
+  filterScroll: { flexGrow: 0, zIndex: 10, elevation: 5, marginTop: 0, marginBottom: 20, minHeight: 44 },
+  filterRow: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: "row" },
+  filterChip: { 
+    height: 38, 
+    paddingHorizontal: 14, 
+    borderRadius: 19, 
+    backgroundColor: "#F3F4F6", 
+    borderWidth: 1.5, 
+    borderColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   filterChipActive: { backgroundColor: "#FFF7ED", borderColor: "#F97316" },
   filterChipText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
   filterChipTextActive: { color: "#F97316" },
-  listContent: { paddingHorizontal: 16, paddingBottom: 32, gap: 10 },
+  listContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 32, gap: 10 },
   importButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#10B981", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 4 },
   // Teacher card
   teacherCard: {
@@ -1430,7 +1520,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 14,
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#DCFCE7",
   },
@@ -1467,5 +1558,87 @@ const styles = StyleSheet.create({
     color: "#166534",
     marginTop: 8,
     opacity: 0.7,
+  },
+  summaryForm: {
+    marginTop: 8,
+    gap: 16,
+  },
+  rangeRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  rangeCol: {
+    flex: 1,
+    gap: 6,
+  },
+  rangeLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#44403C",
+  },
+  rangeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  rangeBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1C1917",
+  },
+  periodRow: {
+    gap: 8,
+  },
+  periodChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  periodChip: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E7E5E4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  periodChipActive: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#F97316",
+  },
+  periodChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#78716C",
+  },
+  periodChipTextActive: {
+    color: "#F97316",
+  },
+  mainSendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 4,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  mainSendBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
 });

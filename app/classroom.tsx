@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { AppHeader } from "@/components/app-header";
@@ -18,6 +17,11 @@ import { formatDateForApi, toThaiDateShort, toThaiDateWithDay, formatClassroomId
 import { DatePickerModal } from "@/components/date-picker-modal";
 import { generateClassroomReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
 import type { StudentAttendanceEntry } from "@/shared/types";
+import { useAppAlert } from "@/components/app-alert-provider";
+import { usePeriod } from "@/lib/period-context";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
+
 
 const STATUS_OPTIONS = [
   { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
@@ -29,11 +33,34 @@ const STATUS_OPTIONS = [
 
 export default function ClassroomSummaryScreen() {
   const { teacher } = useTeacherAuth();
-  const [selectedDate, setSelectedDate] = useState(formatDateForApi(new Date()));
-  const [selectedPeriod, setSelectedPeriod] = useState("morning");
+  const { config } = useSchoolConfig();
+  const { selectedDate, setSelectedDate, selectedPeriod, setIsPageLoading } = usePeriod();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
+  const SummaryCard = ({
+    label,
+    count,
+    color,
+    bg,
+  }: {
+    label: string;
+    count: number;
+    color: string;
+    bg: string;
+  }) => (
+    <View style={[styles.summaryCard, { backgroundColor: bg }]}>
+      <Text style={[styles.summaryCardCount, { color }]}>{count}</Text>
+      <Text style={[styles.summaryCardLabel, { color }]}>{label}</Text>
+    </View>
+  );
+
+
+  const appAlert = useAppAlert();
   const [selectedClassroom, setSelectedClassroom] = useState<string | null>(null);
   const [showClassroomPicker, setShowClassroomPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+
 
   const { data: classrooms = [] } = trpc.classrooms.useQuery();
   const { data: periods = [] } = trpc.periods.useQuery();
@@ -52,16 +79,28 @@ export default function ClassroomSummaryScreen() {
     { enabled: !!selectedClassroom }
   );
 
+  const { data: attendanceList = [], isLoading: loadingAttendance } = trpc.getAttendanceByDatePeriod.useQuery(
+    { date: selectedDate, period: selectedPeriod || "" },
+    { enabled: !!selectedDate && !!selectedPeriod }
+  );
+
+
   const { data: attendanceRecord, isLoading } = trpc.getAttendance.useQuery(
     {
       date: selectedDate,
-      period: selectedPeriod,
+      period: selectedPeriod || "",
       roomId: selectedClassroom ?? "",
     },
     { enabled: !!selectedClassroom && !!selectedDate && !!selectedPeriod }
   );
 
-  const activePeriods = periods.filter((p) => p.status === 1);
+  // Sync loading state to global period context
+  React.useEffect(() => {
+    setIsPageLoading(isLoading || loadingAttendance);
+  }, [isLoading, loadingAttendance, setIsPageLoading]);
+
+
+
 
   const attendanceMap = React.useMemo(() => {
     if (!attendanceRecord) return {};
@@ -91,7 +130,7 @@ export default function ClassroomSummaryScreen() {
     try {
       const entries = attendanceRecord.students as StudentAttendanceEntry[];
       const roomName = formatClassroomId(currentClassroom?.name ?? selectedClassroom);
-      const periodName = activePeriods.find((p) => p.id === selectedPeriod)?.name ?? selectedPeriod;
+      const periodName = periods.find((p) => p.id === selectedPeriod)?.name ?? (selectedPeriod === "morning" ? "กิจกรรมหน้าเสาธง" : "กิจกรรมก่อนเรียนคาบบ่าย");
       const records = students.map((s) => {
         const entry = entries.find((e) => e.student_id === s.studentId);
         const statusMap: Record<string, string> = { "มา": "present", "ขาด": "absent", "สาย": "late", "ลา": "leave", "ป่วย": "sick" };
@@ -119,9 +158,21 @@ export default function ClassroomSummaryScreen() {
       });
       await exportPdfAndShare(html, `เช็คชื่อ_${roomName}_${selectedDate}.pdf`);
     } catch {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถสร้าง PDF ได้");
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถสร้าง PDF ได้", type: "error" });
     }
   };
+
+  const getRoomSummary = (roomId: string) => {
+    const record = attendanceList.find((a) => a.roomId === roomId);
+    if (!record) return null;
+    const entries = record.students as StudentAttendanceEntry[];
+    const counts = { มา: 0, ขาด: 0, สาย: 0, ลา: 0, ป่วย: 0 };
+    for (const e of entries) {
+      if (e.status in counts) counts[e.status as keyof typeof counts]++;
+    }
+    return counts;
+  };
+
 
   return (
     <View style={styles.container}>
@@ -129,178 +180,164 @@ export default function ClassroomSummaryScreen() {
       <ScreenContainer edges={[]} className="flex-1">
         {/* Filters */}
         <View style={styles.filterBar}>
-          {/* Date Picker */}
           <TouchableOpacity
-            style={styles.dateBtn}
+            style={styles.dateRow}
             onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <IconSymbol name="calendar" size={16} color="#F97316" />
-            <Text style={styles.dateBtnText}>
-              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))}
+            <IconSymbol name="calendar" size={16} color={palette.primary} />
+            <Text style={styles.dateText}>
+              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))} • {periods.find(p => p.id === selectedPeriod)?.name ?? selectedPeriod}
             </Text>
+            <IconSymbol name="chevron.down" size={14} color="#78716C" />
           </TouchableOpacity>
-
-          {/* Classroom Picker */}
-          <TouchableOpacity
-            style={styles.classroomPicker}
-            onPress={() => setShowClassroomPicker(!showClassroomPicker)}
-            activeOpacity={0.8}
-          >
-            <IconSymbol name="person.3.fill" size={16} color="#F97316" />
-            <Text style={styles.classroomPickerText}>
-              {currentClassroom ? formatClassroomId(currentClassroom.name) : "เลือกห้องเรียน"}
-            </Text>
-            <IconSymbol
-              name={showClassroomPicker ? "chevron.up" : "chevron.down"}
-              size={16}
-              color="#78716C"
-            />
-          </TouchableOpacity>
-
-          {/* Classroom Dropdown */}
-          {showClassroomPicker && (
-            <View style={styles.dropdown}>
-              {visibleClassrooms.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[
-                    styles.dropdownItem,
-                    selectedClassroom === c.id && styles.dropdownItemActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedClassroom(c.id);
-                    setShowClassroomPicker(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownItemText,
-                      selectedClassroom === c.id && styles.dropdownItemTextActive,
-                    ]}
-                  >
-                    {formatClassroomId(c.name)}
-                  </Text>
-                  {selectedClassroom === c.id && (
-                    <IconSymbol name="checkmark" size={16} color="#F97316" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Period Selector */}
-          <View style={styles.periodRow}>
-            {activePeriods.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[
-                  styles.periodButton,
-                  selectedPeriod === p.id && styles.periodButtonActive,
-                ]}
-                onPress={() => setSelectedPeriod(p.id)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.periodButtonText,
-                    selectedPeriod === p.id && styles.periodButtonTextActive,
-                  ]}
-                >
-                  {p.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
-        {!selectedClassroom ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol name="person.3.fill" size={48} color="#E7E5E4" />
-            <Text style={styles.emptyTitle}>เลือกห้องเรียน</Text>
-            <Text style={styles.emptySubtitle}>กรุณาเลือกห้องเรียนที่ต้องการดูสรุป</Text>
-          </View>
-        ) : isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#F97316" />
-          </View>
-        ) : !attendanceRecord ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol name="calendar" size={48} color="#E7E5E4" />
-            <Text style={styles.emptyTitle}>ยังไม่มีข้อมูล</Text>
-            <Text style={styles.emptySubtitle}>
-              ยังไม่ได้เช็คชื่อ {formatClassroomId(currentClassroom?.name ?? "")} วันนี้
-            </Text>
-          </View>
-        ) : (
-          <ScrollView contentContainerStyle={styles.scrollContent}>
-            {/* Summary Cards */}
-            {summary && (
-              <View style={styles.summarySection}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
-                    สรุป {formatClassroomId(currentClassroom?.name ?? "")} • {toThaiDateShort(new Date(selectedDate + "T00:00:00"))} •{" "}
-                    {activePeriods.find((p) => p.id === selectedPeriod)?.name}
-                  </Text>
+
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {!selectedClassroom ? (
+            /* 1. Classroom Selection List (Card Style) */
+            <View style={styles.classroomSection}>
+              <Text style={styles.sectionTitle}>เลือกห้องเรียน</Text>
+              {visibleClassrooms.map((c) => {
+                const roomSummary = getRoomSummary(c.id);
+                return (
                   <TouchableOpacity
-                    style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF7ED", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
-                    onPress={handleExportPdf}
+                    key={c.id}
+                    style={styles.classroomCard}
+                    onPress={() => setSelectedClassroom(c.id)}
                     activeOpacity={0.8}
                   >
-                    <IconSymbol name="square.and.arrow.up" size={14} color="#F97316" />
-                    <Text style={{ fontSize: 12, fontWeight: "600", color: "#F97316" }}>PDF</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.summaryGrid}>
-                  <SummaryCard label="ทั้งหมด" count={summary.total} color="#1C1917" bg="#F3F4F6" />
-                  <SummaryCard label="มา" count={summary.มา} color="#16A34A" bg="#DCFCE7" />
-                  <SummaryCard label="ขาด" count={summary.ขาด} color="#DC2626" bg="#FEE2E2" />
-                  <SummaryCard label="สาย" count={summary.สาย} color="#CA8A04" bg="#FEF9C3" />
-                  <SummaryCard label="ลา" count={summary.ลา} color="#2563EB" bg="#DBEAFE" />
-                  <SummaryCard label="ป่วย" count={summary.ป่วย} color="#9333EA" bg="#F3E8FF" />
-                </View>
-              </View>
-            )}
-
-            {/* Student List */}
-            <View style={styles.studentSection}>
-              <Text style={styles.sectionTitle}>รายชื่อนักเรียน</Text>
-              {students.map((student) => {
-                const entry = attendanceMap[student.studentId];
-                const status = entry?.status ?? "-";
-                const statusStyle = getStatusStyle(status);
-                return (
-                  <View key={student.studentId} style={styles.studentRow}>
-                    <Text style={styles.studentNo}>{student.no}</Text>
-                    <Text style={styles.studentName} numberOfLines={1}>
-                      {student.name}
-                    </Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: entry ? statusStyle.bg : "#F3F4F6" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusBadgeText,
-                          { color: entry ? statusStyle.color : "#9CA3AF" },
-                        ]}
-                      >
-                        {status}
-                      </Text>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.roomBadge}>
+                        <Text style={styles.roomBadgeText}>{formatClassroomId(c.name)}</Text>
+                      </View>
+                      {roomSummary ? (
+                        <View style={styles.checkedBadge}>
+                          <IconSymbol name="checkmark.circle.fill" size={14} color="#16A34A" />
+                          <Text style={styles.checkedText}>เช็คแล้ว</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.notCheckedBadge}>
+                          <Text style={styles.notCheckedText}>ยังไม่เช็ค</Text>
+                        </View>
+                      )}
                     </View>
-                    {entry?.reason ? (
-                      <Text style={styles.reasonText} numberOfLines={1}>
-                        {entry.reason}
-                      </Text>
-                    ) : null}
-                  </View>
+                    {roomSummary && (
+                      <View style={styles.summaryRow}>
+                        {STATUS_OPTIONS.map((s) => (
+                          <View key={s.label} style={[styles.summaryChip, { backgroundColor: s.bg }]}>
+                            <Text style={[styles.summaryChipCount, { color: s.color }]}>
+                              {roomSummary[s.label as keyof typeof roomSummary]}
+                            </Text>
+                            <Text style={[styles.summaryChipLabel, { color: s.color }]}>{s.label}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    <View style={styles.viewDetailsBtn}>
+                      <Text style={styles.viewDetailsText}>ดูรายละเอียด</Text>
+                      <IconSymbol name="chevron.right" size={14} color="#F97316" />
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
-          </ScrollView>
-        )}
+          ) : (
+            /* 2. Selected Classroom Results */
+            <View>
+              <TouchableOpacity 
+                style={styles.backToRoomsBtn} 
+                onPress={() => setSelectedClassroom(null)}
+                activeOpacity={0.7}
+              >
+                <IconSymbol name="chevron.left" size={16} color="#78716C" />
+                <Text style={styles.backToRoomsText}>กลับไปเลือกห้องเรียน</Text>
+              </TouchableOpacity>
+
+              {isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#F97316" />
+                </View>
+              ) : !attendanceRecord ? (
+                <View style={styles.emptyContainer}>
+                  <IconSymbol name="calendar" size={48} color="#E7E5E4" />
+                  <Text style={styles.emptyTitle}>ยังไม่มีข้อมูล</Text>
+                  <Text style={styles.emptySubtitle}>
+                    ยังไม่ได้เช็คชื่อ {formatClassroomId(currentClassroom?.name ?? "")} วันนี้
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* Summary Cards */}
+                  {summary && (
+                    <View style={styles.summarySection}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                          สรุป {formatClassroomId(currentClassroom?.name ?? "")}
+                        </Text>
+                        <TouchableOpacity
+                          style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF7ED", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+                          onPress={handleExportPdf}
+                          activeOpacity={0.8}
+                        >
+                          <IconSymbol name="square.and.arrow.up" size={14} color="#F97316" />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#F97316" }}>PDF</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.summaryGrid}>
+                        <SummaryCard label="ทั้งหมด" count={summary.total} color="#1C1917" bg="#F3F4F6" />
+                        <SummaryCard label="มา" count={summary.มา} color="#16A34A" bg="#DCFCE7" />
+                        <SummaryCard label="ขาด" count={summary.ขาด} color="#DC2626" bg="#FEE2E2" />
+                        <SummaryCard label="สาย" count={summary.สาย} color="#CA8A04" bg="#FEF9C3" />
+                        <SummaryCard label="ลา" count={summary.ลา} color="#2563EB" bg="#DBEAFE" />
+                        <SummaryCard label="ป่วย" count={summary.ป่วย} color="#9333EA" bg="#F3E8FF" />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Student List */}
+                  <View style={styles.studentSection}>
+                    <Text style={styles.sectionTitle}>รายชื่อนักเรียน</Text>
+                    {students.map((student) => {
+                      const entry = attendanceMap[student.studentId];
+                      const status = entry?.status ?? "-";
+                      const statusStyle = getStatusStyle(status);
+                      return (
+                        <View key={student.studentId} style={styles.studentRow}>
+                          <Text style={styles.studentNo}>{student.no}</Text>
+                          <Text style={styles.studentName} numberOfLines={1}>
+                            {student.name}
+                          </Text>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: entry ? statusStyle.bg : "#F3F4F6" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                { color: entry ? statusStyle.color : "#9CA3AF" },
+                              ]}
+                            >
+                              {status}
+                            </Text>
+                          </View>
+                          {entry?.reason ? (
+                            <Text style={styles.reasonText} numberOfLines={1}>
+                              {entry.reason}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+        </ScrollView>
         <DatePickerModal
           visible={showDatePicker}
           selectedDate={selectedDate}
@@ -314,26 +351,9 @@ export default function ClassroomSummaryScreen() {
   );
 }
 
-function SummaryCard({
-  label,
-  count,
-  color,
-  bg,
-}: {
-  label: string;
-  count: number;
-  color: string;
-  bg: string;
-}) {
-  return (
-    <View style={[styles.summaryCard, { backgroundColor: bg }]}>
-      <Text style={[styles.summaryCardCount, { color }]}>{count}</Text>
-      <Text style={[styles.summaryCardLabel, { color }]}>{label}</Text>
-    </View>
-  );
-}
 
-const styles = StyleSheet.create({
+
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -347,13 +367,26 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E7E5E4",
     zIndex: 10,
   },
+  dateRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    backgroundColor: palette.surface, 
+    paddingHorizontal: 12, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: palette.primary + "40", // 25% opacity
+    alignSelf: "flex-start" 
+  },
+  dateText: { fontSize: 13, fontWeight: "600", color: "#1C1917" },
   classroomPicker: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#FFF7ED",
+    backgroundColor: palette.surface,
     borderWidth: 1.5,
-    borderColor: "#F97316",
+    borderColor: palette.primary,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -387,14 +420,14 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F3F4F6",
   },
   dropdownItemActive: {
-    backgroundColor: "#FFF7ED",
+    backgroundColor: palette.surface,
   },
   dropdownItemText: {
     fontSize: 15,
     color: "#1C1917",
   },
   dropdownItemTextActive: {
-    color: "#F97316",
+    color: palette.primary,
     fontWeight: "700",
   },
   periodRow: {
@@ -410,8 +443,8 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   periodButtonActive: {
-    backgroundColor: "#FFF7ED",
-    borderColor: "#F97316",
+    backgroundColor: palette.surface,
+    borderColor: palette.primary,
   },
   periodButtonText: {
     fontSize: 14,
@@ -419,7 +452,7 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
   periodButtonTextActive: {
-    color: "#F97316",
+    color: palette.primary,
   },
   loadingContainer: {
     flex: 1,
@@ -427,12 +460,124 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyContainer: {
-    flex: 1,
+    paddingVertical: 60,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 40,
     gap: 12,
   },
+  classroomSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 12,
+  },
+  classroomCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#E7E5E4",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  roomBadge: {
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.primary + "30",
+  },
+  roomBadgeText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: palette.primary,
+  },
+  checkedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  checkedText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#16A34A",
+  },
+  notCheckedBadge: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  notCheckedText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#9CA3AF",
+  },
+  summaryRow: {
+    flexDirection: "row",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  summaryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  summaryChipCount: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  summaryChipLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  viewDetailsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+  },
+  viewDetailsText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.primary,
+  },
+  backToRoomsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#F9FAFB",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E7E5E4",
+  },
+  backToRoomsText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#78716C",
+  },
+
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",

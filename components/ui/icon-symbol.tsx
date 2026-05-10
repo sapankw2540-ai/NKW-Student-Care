@@ -59,6 +59,11 @@ const MAPPING = {
   "arrow.left": "arrow-back",
   "wifi.slash": "wifi-off",
   "icloud.slash": "cloud-off",
+  "eye.fill": "visibility",
+  "eye.slash.fill": "visibility-off",
+  "lock.fill": "lock",
+  "exclamationmark.circle.fill": "error",
+  "key.fill": "vpn-key",
 } as IconMapping;
 
 /**

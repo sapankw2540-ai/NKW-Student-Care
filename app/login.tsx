@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
 } from "react-native";
@@ -26,7 +25,10 @@ const REMEMBER_ME_KEY = "remembered_teacher_credentials";
 export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>("idle");
   const [loadingVisible, setLoadingVisible] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
@@ -58,24 +60,25 @@ export default function LoginScreen() {
     onSuccess: async (data) => {
       setLoadingStatus("success");
       setLoadingMessage("เข้าสู่ระบบสำเร็จ");
+      setLoginError(null);
       if (rememberMe) {
         await AsyncStorage.setItem(REMEMBER_ME_KEY, JSON.stringify({ u: username, p: password }));
       } else {
         await AsyncStorage.removeItem(REMEMBER_ME_KEY);
       }
-      await setTeacher(data.teacher);
+      await setTeacher({ ...data.teacher, token: data.token });
     },
     onError: (error) => {
-      setLoadingStatus("error");
-      setLoadingMessage(error.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      setLoadingStatus("idle");
+      setLoadingVisible(false);
+      setLoginError(error.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
     },
   });
 
   const handleLogin = () => {
+    setLoginError(null);
     if (!username.trim() || !password.trim()) {
-      setLoadingStatus("error");
-      setLoadingVisible(true);
-      setLoadingMessage("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
+      setLoginError("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
       return;
     }
     setLoadingStatus("loading");
@@ -101,6 +104,8 @@ export default function LoginScreen() {
         status={loadingStatus}
         message={loadingMessage} 
         onClose={handleCloseLoading}
+        autoCloseMs={loadingStatus === "success" ? 3000 : undefined}
+        autoCloseOn={["success"]}
       />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -143,8 +148,18 @@ export default function LoginScreen() {
                 placeholder="กรอกรหัสผ่าน"
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry
+                secureTextEntry={!showPassword}
               />
+              <TouchableOpacity 
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeBtn}
+              >
+                <IconSymbol 
+                  name={showPassword ? "eye.slash.fill" : "eye.fill"} 
+                  size={20} 
+                  color="#78716C" 
+                />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -159,6 +174,13 @@ export default function LoginScreen() {
             </View>
             <Text style={styles.rememberMeLabel}>จดจำรหัสผ่าน</Text>
           </TouchableOpacity>
+
+          {loginError && (
+            <View style={styles.errorContainer}>
+              <IconSymbol name="exclamationmark.circle.fill" size={16} color="#DC2626" />
+              <Text style={styles.errorText}>{loginError}</Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.loginButton, loginMutation.isPending && styles.disabledButton]}
@@ -272,6 +294,26 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     fontSize: 14,
     color: "#4B5563",
     fontWeight: "500",
+  },
+  eyeBtn: {
+    padding: 4,
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    padding: 12,
+    borderRadius: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
+    marginTop: 8,
+  },
+  errorText: {
+    color: "#DC2626",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
   loginButton: {
     backgroundColor: palette.primary,

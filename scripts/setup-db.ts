@@ -164,7 +164,7 @@ async function setup() {
     `;
     await sql`
       INSERT INTO school_config (id, school_name, province, semester, academic_year, version) 
-      VALUES (1, 'โรงเรียนน้ำคำวิทยา', 'จังหวัดศรีสะเกษ', '1', '2569', 'v4.5.9')
+      VALUES (1, 'โรงเรียนน้ำคำวิทยา', 'จังหวัดศรีสะเกษ', '1', '2569', 'v4.5.10')
       ON CONFLICT (id) DO NOTHING
     `;
 

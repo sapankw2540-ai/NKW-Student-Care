@@ -15,6 +15,7 @@ export interface TeacherSession {
   classroomIds: string | null;
   role: "teacher" | "admin" | "viewer";
   notifyTime?: string | null;
+  token?: string;
 }
 
 export interface StudentAttendanceEntry {

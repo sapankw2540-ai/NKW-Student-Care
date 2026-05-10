@@ -1,4 +1,4 @@
-# ระบบบันทึกกิจกรรมหน้าเสาธง (NKW Student Care) v4.5.9
+# ระบบบันทึกกิจกรรมหน้าเสาธง (NKW Student Care) v4.5.10
 # NKW-Student-Care
 
 ระบบบันทึกกิจกรรมหน้าเสาธง (เช็คชื่อนักเรียน) สำหรับโรงเรียนน้ำคำวิทยา พัฒนาด้วย Expo (React Native) + tRPC + Supabase
@@ -12,6 +12,21 @@
 ---
 
 ## 📈 Development Progress (Log)
+
+### 2026-05-10
+- **Bug Fixes (Session & Display)**:
+    - [x] **v4.5.10**: แก้ไขปัญหา "รายชื่อนักเรียนไม่แสดง" โดยปรับปรุงการเก็บ Session Token ใน AsyncStorage ให้ถูกต้อง
+    - [x] แก้ไขข้อผิดพลาดของ Component ที่ไม่ได้นิยาม (ConfirmModal) ในหน้า Admin
+- **LINE Messaging API**:
+    - [x] อัปเกรดระบบแจ้งเตือนจาก LINE Notify เป็น **LINE Messaging API (Push Message)** เพื่อความเสถียรและฟีเจอร์ที่มากขึ้น
+    - [x] เพิ่มระบบ **"ส่งสรุปรายวัน/รายช่วงเวลา"** เข้า LINE โดย Admin สามารถกดส่งได้เองจากหน้าบันทึกข้อมูล
+    - [x] ลงชื่อผู้รายงานอัตโนมัติเป็น "นายธวัชชัย แก่นจักร์"
+- **Strict Validation**:
+    - [x] บล็อกการบันทึกซ้ำ (1 ห้อง 1 ครั้ง 1 ช่วงเวลา) เพื่อป้องกันข้อมูลทับซ้อน
+- **UI/UX Enhancement**:
+    - [x] ปรับปรุงการแสดงชื่อผู้รายงานใน LINE message ให้เป็น "ผู้บันทึก: {ชื่อ}" เหมือนกันสำหรับทั้งครูและแอดมิน
+    - [x] ยืนยันการใช้ AppAlertProvider สำหรับ modal ทุกครั้งที่มีข้อความเตือน
+    - [x] ยืนยันการปิด modal อัตโนมัติหลัง login สำเร็จใน 5 วินาที
 
 ### 2026-05-09
 - **Excel/CSV Import (Students)**:
@@ -49,7 +64,7 @@
 
 ---
 
-## 🚀 Current Status: Stable (v4.5.9-rc1)
+## 🚀 Current Status: Stable (v4.5.10)
 - [x] ระบบ Login (Teacher/Admin)
 - [x] หน้าเช็คชื่อ (Morning/Noon/Evening)
 - [x] Dashboard สรุปภาพรวม

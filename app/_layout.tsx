@@ -1,4 +1,4 @@
-import { Tabs, router } from "expo-router";
+import { Tabs, router, usePathname } from "expo-router";
 import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform } from "react-native";
@@ -8,8 +8,12 @@ import { TeacherAuthProvider, useTeacherAuth } from "@/lib/teacher-auth";
 import { SchoolConfigProvider, useSchoolConfig } from "@/lib/school-config";
 import { getThemePalette } from "@/constants/theme-palettes";
 import { DatabaseConfigProvider } from "@/lib/database-config";
+import { PeriodProvider, usePeriod, Period } from "@/lib/period-context";
+import { PeriodSelectionModal } from "@/components/period-selection-modal";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, createTRPCClient } from "@/lib/trpc";
+import { AppAlertProvider } from "@/components/app-alert-provider";
 
 // Root Layout with all providers
 export default function RootLayout() {
@@ -22,10 +26,15 @@ export default function RootLayout() {
         <TeacherAuthProvider>
           <SchoolConfigProvider>
             <DatabaseConfigProvider>
-              <TabLayout />
+              <PeriodProvider>
+                <AppAlertProvider>
+                  <TabLayout />
+                </AppAlertProvider>
+              </PeriodProvider>
             </DatabaseConfigProvider>
           </SchoolConfigProvider>
         </TeacherAuthProvider>
+
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -38,54 +47,78 @@ function TabLayout() {
   const tabBarHeight = (isWeb ? 70 : 64) + bottomPadding;
   const { teacher: actualTeacher, isLoading } = useTeacherAuth();
   const { config } = useSchoolConfig();
+  const { selectedPeriod, setSelectedPeriod, isPageLoading } = usePeriod();
   const palette = getThemePalette(config.themeColor);
 
-  // BYPASS LOGIN
-  const teacher = actualTeacher || { role: 'admin', username: 'admin', name: 'Admin (Bypassed)' };
+  const [showPeriodModal, setShowPeriodModal] = useState(false);
 
-  // useEffect(() => {
-  //   if (!isLoading && !teacher) {
-  //     router.replace("/login");
-  //   }
-  // }, [teacher, isLoading]);
+
+  const teacher = actualTeacher;
+
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (!isLoading && !teacher) {
+      router.replace("/login");
+    }
+  }, [teacher, isLoading]);
+
+  useEffect(() => {
+    // List of tabs that require a period to be selected
+    const attendanceTabs = ["/", "/dashboard", "/classroom", "/overall"];
+    const isAttendanceTab = attendanceTabs.includes(pathname);
+
+    // Only show modal if NOT loading and period is not set
+    if (teacher && isAttendanceTab && !selectedPeriod && !showPeriodModal && !isPageLoading) {
+      setShowPeriodModal(true);
+    }
+  }, [selectedPeriod, teacher, pathname, isPageLoading]);
 
   if (isLoading) return null;
-  
-  // If not logged in, only allow login screen (handled by router.replace)
-  // But we still need to render something for expo-router to work
-  if (!teacher) {
-    return <Tabs screenOptions={{ headerShown: false, tabBarStyle: { display: 'none' } }} />;
-  }
 
-  const isAdmin = teacher.role === "admin";
+  const isAdmin = teacher?.role === "admin";
+
+  const onPeriodSelect = (period: Period) => {
+    setSelectedPeriod(period);
+    setShowPeriodModal(false);
+  };
+
+  const showTabBar = teacher && pathname !== "/login" && pathname !== "/onboarding";
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: palette.primary,
-        tabBarInactiveTintColor: "#78716C",
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: {
-          paddingTop: 12,
-          paddingBottom: bottomPadding,
-          height: tabBarHeight,
-          backgroundColor: "#FFFFFF",
-          borderTopColor: "#E7E5E4",
-          borderTopWidth: 0.5,
-          elevation: 8,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-          marginTop: 4,
-        },
-      }}
-    >
+    <>
+      <PeriodSelectionModal 
+        visible={showPeriodModal} 
+        onSelect={onPeriodSelect} 
+        onClose={() => setShowPeriodModal(false)} 
+      />
+      <Tabs
+        screenOptions={{
+          tabBarActiveTintColor: palette.primary,
+          tabBarInactiveTintColor: "#78716C",
+          headerShown: false,
+          tabBarButton: HapticTab,
+          tabBarStyle: {
+            display: showTabBar ? "flex" : "none",
+            paddingTop: 12,
+            paddingBottom: bottomPadding,
+            height: tabBarHeight,
+            backgroundColor: "#FFFFFF",
+            borderTopColor: "#E7E5E4",
+            borderTopWidth: 0.5,
+            elevation: 8,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.05,
+            shadowRadius: 10,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "600",
+            marginTop: 4,
+          },
+        }}
+      >
       <Tabs.Screen
         name="index"
         options={{
@@ -122,6 +155,7 @@ function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="history"
         options={{
@@ -172,5 +206,6 @@ function TabLayout() {
       <Tabs.Screen name="login" options={{ href: null }} />
       <Tabs.Screen name="onboarding" options={{ href: null }} />
     </Tabs>
+    </>
   );
 }

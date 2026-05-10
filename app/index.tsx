@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
+import { useFocusEffect } from "expo-router";
+
 import {
   View,
   Text,
@@ -8,7 +10,6 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
@@ -23,6 +24,10 @@ import type { StudentAttendanceEntry } from "@/shared/types";
 import { useSchoolConfig } from "@/lib/school-config";
 import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
+import { useAppAlert } from "@/components/app-alert-provider";
+import { usePeriod } from "@/lib/period-context";
+
+
 
 const STATUS_OPTIONS = [
   { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
@@ -39,11 +44,12 @@ function getStatusStyle(status: string) {
 export default function AttendanceScreen() {
   const { teacher } = useTeacherAuth();
   const { config } = useSchoolConfig();
+  const { selectedDate, setSelectedDate, selectedPeriod, setIsPageLoading } = usePeriod();
   const palette = getThemePalette(config.themeColor);
   const styles = useMemo(() => createStyles(palette), [palette]);
 
-  const [selectedDate, setSelectedDate] = useState(formatDateForApi(new Date()));
-  const [selectedPeriod, setSelectedPeriod] = useState("morning");
+
+
   const [checkModalVisible, setCheckModalVisible] = useState(false);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<{ id: string; name: string } | null>(null);
@@ -53,8 +59,10 @@ export default function AttendanceScreen() {
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>("idle");
   const [loadingVisible, setLoadingVisible] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const alert = useAppAlert();
 
   const utils = trpc.useUtils();
+
 
   const { data: classrooms = [], isLoading: loadingClassrooms } = trpc.classrooms.useQuery();
   const { data: periods = [] } = trpc.periods.useQuery();
@@ -69,9 +77,22 @@ export default function AttendanceScreen() {
 
   const { data: attendanceList = [], refetch: refetchAttendance, isLoading: loadingAttendance } =
     trpc.getAttendanceByDatePeriod.useQuery(
-      { date: selectedDate, period: selectedPeriod },
+      { date: selectedDate, period: selectedPeriod || "" },
       { enabled: !!selectedDate && !!selectedPeriod }
     );
+
+  // Sync loading state to global period context
+  useEffect(() => {
+    setIsPageLoading(loadingClassrooms || loadingAttendance);
+  }, [loadingClassrooms, loadingAttendance, setIsPageLoading]);
+
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchAttendance();
+    }, [refetchAttendance, selectedDate, selectedPeriod])
+  );
+
 
   const { data: roomStudents = [], isLoading: loadingStudents } = trpc.studentsByClassroom.useQuery(
     { classroomId: selectedRoom?.id ?? "" },
@@ -79,9 +100,20 @@ export default function AttendanceScreen() {
   );
 
   const { data: existingAttendance } = trpc.getAttendance.useQuery(
-    { date: selectedDate, period: selectedPeriod, roomId: selectedRoom?.id ?? "" },
+    { date: selectedDate, period: selectedPeriod || "", roomId: selectedRoom?.id ?? "" },
     { enabled: !!selectedRoom && !!selectedDate && !!selectedPeriod }
   );
+
+  const isRoomChecked = useCallback((roomId: string) => {
+    return attendanceList.some(a => a.roomId === roomId);
+  }, [attendanceList]);
+
+  const canEdit = useMemo(() => {
+    if (!teacher || teacher.role === "viewer") return false;
+    if (teacher.role === "admin") return true;
+    if (!selectedRoom) return true;
+    return !isRoomChecked(selectedRoom.id);
+  }, [teacher, selectedRoom, isRoomChecked]);
 
   const saveMutation = trpc.saveAttendance.useMutation({
     onSuccess: () => {
@@ -158,11 +190,12 @@ export default function AttendanceScreen() {
 
     saveMutation.mutate({
       date: selectedDate,
-      period: selectedPeriod,
+      period: selectedPeriod || "",
       roomId: selectedRoom.id,
       teacher: teacher.username,
       students: studentsData,
     });
+
   };
 
   const handleCloseLoading = () => {
@@ -173,7 +206,6 @@ export default function AttendanceScreen() {
     }
   };
 
-  const isRoomChecked = (roomId: string) => attendanceList.some((a) => a.roomId === roomId);
 
   const getAttendanceSummary = (roomId: string) => {
     const record = attendanceList.find((a) => a.roomId === roomId);
@@ -194,11 +226,21 @@ export default function AttendanceScreen() {
       )
     : roomStudents;
 
-  const activePeriods = periods.filter((p) => p.status === 1);
-
   const renderClassroomItem = ({ item }: { item: { id: string; name: string } }) => {
     const checked = isRoomChecked(item.id);
     const summary = getAttendanceSummary(item.id);
+    const handlePress = () => {
+      if (checked && teacher?.role !== "admin") {
+        alert.show({
+          title: "บันทึกข้อมูลแล้ว",
+          message: "มีการบันทึกข้อมูลแล้ว หากต้องการแก้ไข กรุณาแจ้งงานกิจการนักเรียน",
+          type: "info"
+        });
+        return;
+      }
+      openCheckModal(item);
+    };
+
     return (
       <View style={styles.classroomCard}>
         <View style={styles.cardHeader}>
@@ -227,51 +269,39 @@ export default function AttendanceScreen() {
           style={[
             styles.checkButton, 
             checked && styles.checkButtonEdit,
+            checked && teacher?.role !== "admin" && { backgroundColor: "#A8A29E" },
             teacher?.role === "viewer" && { backgroundColor: "#A8A29E" }
           ]}
-          onPress={() => openCheckModal(item)}
+          onPress={handlePress}
           activeOpacity={0.8}
         >
           <IconSymbol 
-            name={teacher?.role === "viewer" ? "eye.fill" : (checked ? "pencil" : "checkmark.circle.fill")} 
+            name={teacher?.role === "viewer" || (checked && teacher?.role !== "admin") ? "eye.fill" : (checked ? "pencil" : "checkmark.circle.fill")} 
             size={16} 
             color="#FFFFFF" 
           />
           <Text style={styles.checkButtonText}>
-            {teacher?.role === "viewer" ? "ดูรายละเอียด" : (checked ? "แก้ไขการเช็คชื่อ" : "เช็คชื่อ")}
+            {teacher?.role === "viewer" || (checked && teacher?.role !== "admin") ? "ดูรายละเอียด" : (checked ? "แก้ไขการเช็คชื่อ" : "เช็คชื่อ")}
           </Text>
         </TouchableOpacity>
       </View>
     );
+
   };
 
   return (
     <View style={styles.container}>
       <AppHeader title="ฟอร์มเช็คชื่อ" />
       <ScreenContainer edges={[]} className="flex-1">
-        {/* Date and Period Selector */}
+        {/* Date and Period Info */}
         <View style={styles.filterBar}>
-          {/* Date picker row */}
           <TouchableOpacity style={styles.dateRow} onPress={() => setDatePickerVisible(true)} activeOpacity={0.7}>
             <IconSymbol name="calendar" size={16} color={palette.primary} />
-            <Text style={styles.dateText}>{toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))}</Text>
+            <Text style={styles.dateText}>
+              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))} • {periods.find(p => p.id === selectedPeriod)?.name ?? (selectedPeriod === "morning" ? "กิจกรรมหน้าเสาธง" : "กิจกรรมก่อนเรียนคาบบ่าย")}
+            </Text>
             <IconSymbol name="chevron.down" size={14} color="#78716C" />
           </TouchableOpacity>
-          {/* Period Selector */}
-          <View style={styles.periodRow}>
-            {activePeriods.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.periodButton, selectedPeriod === p.id && styles.periodButtonActive]}
-                onPress={() => setSelectedPeriod(p.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.periodButtonText, selectedPeriod === p.id && styles.periodButtonTextActive]}>
-                  {p.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         {/* Classroom List */}
@@ -319,7 +349,7 @@ export default function AttendanceScreen() {
               <Text style={styles.modalTitle}>เช็คชื่อ {formatClassroomId(selectedRoom?.name ?? "")}</Text>
               <Text style={styles.modalSubtitle}>
                 {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))} •{" "}
-                {activePeriods.find((p) => p.id === selectedPeriod)?.name ?? selectedPeriod}
+                {periods.find((p) => p.id === selectedPeriod)?.name ?? (selectedPeriod === "morning" ? "กิจกรรมหน้าเสาธง" : "กิจกรรมก่อนเรียนคาบบ่าย")}
               </Text>
             </View>
             <TouchableOpacity style={styles.modalCloseButton} onPress={() => setCheckModalVisible(false)}>
@@ -374,6 +404,16 @@ export default function AttendanceScreen() {
             </View>
           ) : null}
 
+          {/* Permission Notice */}
+          {!canEdit && (
+            <View style={styles.readOnlyNotice}>
+              <IconSymbol name="info.circle" size={14} color="#B45309" />
+              <Text style={styles.readOnlyNoticeText}>
+                ห้องเรียนนี้ได้มีการบันทึกการเช็คชื่อแล้ว ไม่อนุญาตให้บันทึกซ้ำ
+              </Text>
+            </View>
+          )}
+
           {/* Student List */}
           {loadingStudents ? (
             <ActivityIndicator size="large" color={palette.primary} style={{ marginTop: 40 }} />
@@ -402,9 +442,10 @@ export default function AttendanceScreen() {
                               style={[
                                 styles.statusBtn,
                                 { backgroundColor: currentStatus === s.label ? s.bg : "#F3F4F6" },
+                                !canEdit && { opacity: 0.8 }
                               ]}
-                              onPress={() => teacher?.role !== "viewer" && setStudentStatus(item.studentId, s.label)}
-                              disabled={teacher?.role === "viewer"}
+                              onPress={() => canEdit && setStudentStatus(item.studentId, s.label)}
+                              disabled={!canEdit}
                             >
                               <Text style={[styles.statusBtnText, { color: currentStatus === s.label ? s.color : "#6B7280" }]}>
                                 {s.label}
@@ -414,7 +455,7 @@ export default function AttendanceScreen() {
                           {/* Note toggle button */}
                           <TouchableOpacity
                             style={[styles.noteBtn, hasNote && styles.noteBtnActive]}
-                            onPress={() => toggleNote(item.studentId)}
+                            onPress={() => (canEdit || hasNote) && toggleNote(item.studentId)}
                           >
                             <IconSymbol name="doc.text" size={14} color={hasNote ? palette.primary : "#9CA3AF"} />
                           </TouchableOpacity>
@@ -442,9 +483,10 @@ export default function AttendanceScreen() {
             />
           )}
 
-          {/* Save Button (Hide for viewer) */}
-          {teacher?.role !== "viewer" && (
+          {/* Save Button (Hide for viewer or if already checked for non-admins) */}
+          {canEdit && (
             <View style={styles.modalFooter}>
+
               <TouchableOpacity
                 style={[styles.saveButton, saveMutation.isPending && styles.saveButtonDisabled]}
                 onPress={handleSave}
@@ -476,8 +518,20 @@ export default function AttendanceScreen() {
 }
 
 function SummaryChip({ label, count, color, bg }: { label: string; count: number; color: string; bg: string }) {
+  const getIcon = (l: string) => {
+    switch (l) {
+      case "มา": return "checkmark.circle.fill";
+      case "ขาด": return "xmark.circle.fill";
+      case "สาย": return "clock.fill";
+      case "ลา": return "person.fill";
+      case "ป่วย": return "pills.fill";
+      default: return "circle.fill";
+    }
+  };
+
   return (
     <View style={[styles.summaryChip, { backgroundColor: bg }]}>
+      <IconSymbol name={getIcon(label) as any} size={10} color={color} />
       <Text style={[styles.summaryChipLabel, { color }]}>{label}</Text>
       <Text style={[styles.summaryChipCount, { color }]}>{count}</Text>
     </View>
@@ -584,7 +638,25 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: "#1C1917", paddingVertical: 0 },
   searchResultInfo: { paddingHorizontal: 16, paddingVertical: 6, backgroundColor: palette.surface },
-  searchResultText: { fontSize: 12, color: "#78716C" },
+  searchResultText: { fontSize: 13, color: "#78716C", fontWeight: "600" },
+  readOnlyNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    padding: 12,
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FEF3C7",
+  },
+  readOnlyNoticeText: {
+    color: "#B45309",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
   quickSelectRow: {
     flexDirection: "row",
     alignItems: "center",

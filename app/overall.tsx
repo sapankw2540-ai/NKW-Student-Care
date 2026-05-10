@@ -12,9 +12,13 @@ import { ScreenContainer } from "@/components/screen-container";
 import { AppHeader } from "@/components/app-header";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { trpc } from "@/lib/trpc";
-import { formatDateForApi, toThaiDateWithDay, formatClassroomId } from "@/lib/thai-date";
 import { DatePickerModal } from "@/components/date-picker-modal";
 import type { StudentAttendanceEntry } from "@/shared/types";
+import { usePeriod } from "@/lib/period-context";
+import { toThaiDateWithDay, formatClassroomId } from "@/lib/thai-date";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
+
 
 const STATUS_OPTIONS = [
   { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
@@ -38,18 +42,48 @@ interface RoomSummary {
 }
 
 export default function OverallSummaryScreen() {
-  const [selectedDate, setSelectedDate] = useState(formatDateForApi(new Date()));
-  const [selectedPeriod, setSelectedPeriod] = useState("morning");
+  const { config } = useSchoolConfig();
+  const { selectedDate, setSelectedDate, selectedPeriod, setIsPageLoading } = usePeriod();
+  const palette = getThemePalette(config.themeColor);
+  const styles = React.useMemo(() => createStyles(palette), [palette]);
+
+  const StatCard = ({
+    label,
+    value,
+    color,
+    bg,
+    icon,
+  }: {
+    label: string;
+    value: number;
+    color: string;
+    bg: string;
+    icon: string;
+  }) => (
+    <View style={[styles.statCard, { backgroundColor: bg }]}>
+      <IconSymbol name={icon as any} size={20} color={color} />
+      <Text style={[styles.statCardValue, { color }]}>{value}</Text>
+      <Text style={[styles.statCardLabel, { color }]}>{label}</Text>
+    </View>
+  );
+
+
   const [showDatePicker, setShowDatePicker] = useState(false);
+
 
   const { data: classrooms = [] } = trpc.classrooms.useQuery();
   const { data: periods = [] } = trpc.periods.useQuery();
   const { data: attendanceList = [], isLoading } = trpc.getAttendanceByDatePeriod.useQuery(
-    { date: selectedDate, period: selectedPeriod },
+    { date: selectedDate, period: selectedPeriod || "" },
     { enabled: !!selectedDate && !!selectedPeriod }
   );
 
-  const activePeriods = periods.filter((p) => p.status === 1);
+  // Sync loading state to global period context
+  React.useEffect(() => {
+    setIsPageLoading(isLoading);
+  }, [isLoading, setIsPageLoading]);
+
+
 
   // Build summary per room
   const roomSummaries: RoomSummary[] = classrooms.map((c) => {
@@ -141,34 +175,14 @@ export default function OverallSummaryScreen() {
             onPress={() => setShowDatePicker(true)}
             activeOpacity={0.7}
           >
-            <IconSymbol name="calendar" size={16} color="#F97316" />
+            <IconSymbol name="calendar" size={16} color={palette.primary} />
             <Text style={styles.dateText}>
-              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))}
+              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))} • {periods.find(p => p.id === selectedPeriod)?.name ?? selectedPeriod}
             </Text>
+            <IconSymbol name="chevron.down" size={14} color="#78716C" />
           </TouchableOpacity>
-          <View style={styles.periodRow}>
-            {activePeriods.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[
-                  styles.periodButton,
-                  selectedPeriod === p.id && styles.periodButtonActive,
-                ]}
-                onPress={() => setSelectedPeriod(p.id)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.periodButtonText,
-                    selectedPeriod === p.id && styles.periodButtonTextActive,
-                  ]}
-                >
-                  {p.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
+
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -301,29 +315,9 @@ export default function OverallSummaryScreen() {
   );
 }
 
-function StatCard({
-  label,
-  value,
-  color,
-  bg,
-  icon,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  bg: string;
-  icon: string;
-}) {
-  return (
-    <View style={[styles.statCard, { backgroundColor: bg }]}>
-      <IconSymbol name={icon as any} size={20} color={color} />
-      <Text style={[styles.statCardValue, { color }]}>{value}</Text>
-      <Text style={[styles.statCardLabel, { color }]}>{label}</Text>
-    </View>
-  );
-}
 
-const styles = StyleSheet.create({
+
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -336,41 +330,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E7E5E4",
   },
-  dateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
+  dateRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    backgroundColor: palette.surface, 
+    paddingHorizontal: 12, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: palette.primary + "40", // 25% opacity
+    alignSelf: "flex-start" 
   },
-  dateText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1C1917",
-  },
-  periodRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  periodButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  periodButtonActive: {
-    backgroundColor: "#FFF7ED",
-    borderColor: "#F97316",
-  },
-  periodButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  periodButtonTextActive: {
-    color: "#F97316",
-  },
+  dateText: { fontSize: 13, fontWeight: "600", color: "#1C1917" },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
@@ -414,12 +386,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   rateCard: {
-    backgroundColor: "#FFF7ED",
+    backgroundColor: palette.surface,
     borderRadius: 12,
     padding: 14,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: "#FED7AA",
+    borderColor: palette.primary + "30",
   },
   rateHeader: {
     flexDirection: "row",
@@ -435,7 +407,7 @@ const styles = StyleSheet.create({
   rateValue: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#F97316",
+    color: palette.primary,
   },
   rateBarBg: {
     height: 8,
@@ -445,7 +417,7 @@ const styles = StyleSheet.create({
   },
   rateBarFill: {
     height: "100%",
-    backgroundColor: "#F97316",
+    backgroundColor: palette.primary,
     borderRadius: 4,
   },
   rateFooter: {
@@ -468,7 +440,7 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F97316",
+    backgroundColor: palette.primary,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -534,11 +506,11 @@ const styles = StyleSheet.create({
   totalRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFF7ED",
+    backgroundColor: palette.surface,
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderTopWidth: 2,
-    borderTopColor: "#F97316",
+    borderTopColor: palette.primary,
   },
   totalRowText: {
     flex: 1,

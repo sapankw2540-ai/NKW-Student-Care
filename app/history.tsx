@@ -8,7 +8,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
-  Alert,
 } from "react-native";
 import { generateHistoryReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
 import { ScreenContainer } from "@/components/screen-container";
@@ -18,6 +17,7 @@ import { trpc } from "@/lib/trpc";
 import { useTeacherAuth } from "@/lib/teacher-auth";
 import { toThaiDateWithDay, formatDateForApi, formatClassroomId } from "@/lib/thai-date";
 import type { StudentAttendanceEntry } from "@/shared/types";
+import { useAppAlert } from "@/components/app-alert-provider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -58,6 +58,7 @@ function getDateRange(mode: RangeMode, offset: number) {
 
 export default function HistoryScreen() {
   const { teacher } = useTeacherAuth();
+  const appAlert = useAppAlert();
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
   const [rangeOffset, setRangeOffset] = useState(0);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -156,7 +157,7 @@ export default function HistoryScreen() {
       });
       await exportPdfAndShare(html, `รายงาน_${roomName}_${range.label}.pdf`);
     } catch (err) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถสร้าง PDF ได้");
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถสร้าง PDF ได้", type: "error" });
     }
   };
 

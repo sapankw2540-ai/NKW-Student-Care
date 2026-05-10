@@ -7,7 +7,6 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { AppHeader } from "@/components/app-header";
@@ -16,6 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { useTeacherAuth } from "@/lib/teacher-auth";
 import { formatDateForApi, formatClassroomId } from "@/lib/thai-date";
 import { generateHistoryReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
+import { useAppAlert } from "@/components/app-alert-provider";
 
 type RangeMode = "week" | "month";
 
@@ -47,6 +47,7 @@ function getDateRange(mode: RangeMode, offset: number) {
 
 export default function AbsentAlertScreen() {
   const { teacher } = useTeacherAuth();
+  const appAlert = useAppAlert();
   const [rangeMode, setRangeMode] = useState<RangeMode>("week");
   const [rangeOffset, setRangeOffset] = useState(0);
   const [threshold, setThreshold] = useState(3);
@@ -111,7 +112,7 @@ export default function AbsentAlertScreen() {
       });
       await exportPdfAndShare(html, `ขาดบ่อย_${range.label}.pdf`);
     } catch {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถสร้าง PDF ได้");
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถสร้าง PDF ได้", type: "error" });
     }
   };
 

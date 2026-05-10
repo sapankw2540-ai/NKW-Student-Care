@@ -9,7 +9,7 @@ export const appRouter = router({
   // Health check
   health: publicProcedure.query(() => "ok"),
   ping: publicProcedure.query(() => "pong"),
-  version: publicProcedure.query(() => "1.0.1"),
+  version: publicProcedure.query(() => "4.5.10"),
 
   getAttendanceHistory: protectedProcedure
     .input(z.object({
@@ -25,9 +25,9 @@ export const appRouter = router({
         .gte("date", input.startDate)
         .lte("date", input.endDate)
         .order("date", { ascending: false });
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // Group by date and period
       const grouped: Record<string, any> = {};
       data.forEach(item => {
@@ -60,9 +60,9 @@ export const appRouter = router({
         .select("*")
         .gte("date", input.startDate)
         .lte("date", input.endDate);
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       return data;
     }),
 
@@ -80,9 +80,9 @@ export const appRouter = router({
         .eq("status_name", "ขาด")
         .gte("date", input.startDate)
         .lte("date", input.endDate);
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // 2. Count occurrences per student
       const counts: Record<string, { count: number, classroomId: string }> = {};
       attendance.forEach(item => {
@@ -91,20 +91,20 @@ export const appRouter = router({
         }
         counts[item.student_id].count++;
       });
-      
+
       // 3. Filter by threshold
       const frequentStudentIds = Object.keys(counts).filter(id => counts[id].count >= input.threshold);
-      
+
       if (frequentStudentIds.length === 0) return [];
-      
+
       // 4. Get student details
       const { data: students, error: studentError } = await ctx.supabase
         .from("students")
         .select("student_id, name, classroom_id")
         .in("student_id", frequentStudentIds);
-      
+
       if (studentError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: studentError.message });
-      
+
       // 5. Combine and return
       return students.map(s => ({
         studentId: s.student_id,
@@ -131,10 +131,11 @@ export const appRouter = router({
         });
       }
 
-      const token = await new jose.SignJWT({ 
-        id: teacher.id, 
-        role: teacher.role, 
-        username: teacher.username 
+      const token = await new jose.SignJWT({
+        id: teacher.id,
+        name: teacher.name,
+        role: teacher.role,
+        username: teacher.username
       })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
@@ -162,7 +163,7 @@ export const appRouter = router({
       .select("*")
       .eq("status", 1)
       .order("name");
-    
+
     if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
     return data;
   }),
@@ -177,9 +178,9 @@ export const appRouter = router({
         .eq("classroom_id", input.classroomId)
         .eq("status", 1)
         .order("no");
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // Map to frontend expected format
       return data.map(s => ({
         id: s.id,
@@ -199,15 +200,15 @@ export const appRouter = router({
         .select("*")
         .eq("date", input.date)
         .eq("period_id", input.period);
-      
+
       if (input.roomId) {
         query = query.eq("classroom_id", input.roomId);
       }
 
       const { data, error } = await query;
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // If roomId is provided, return in the format { students: [...] } as expected by some UI
       if (input.roomId) {
         return {
@@ -218,7 +219,7 @@ export const appRouter = router({
           }))
         };
       }
-      
+
       return data;
     }),
 
@@ -230,9 +231,9 @@ export const appRouter = router({
         .select("*")
         .eq("date", input.date)
         .eq("period_id", input.period);
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // Group by roomId for the main dashboard list
       const grouped: Record<string, any[]> = {};
       data.forEach(item => {
@@ -270,29 +271,34 @@ export const appRouter = router({
       }
 
       // --- Prevent Duplicate Save ---
-      const { data: existing } = await ctx.supabase
-        .from("attendance")
-        .select("id")
-        .eq("classroom_id", input.roomId)
-        .eq("date", input.date)
-        .eq("period_id", input.period)
-        .limit(1);
+      const userRole = (ctx.user.role || "").trim().toLowerCase();
+      const isAdmin = userRole === "admin";
+      
+      if (!isAdmin) {
+        const { data: existing } = await ctx.supabase
+          .from("attendance")
+          .select("id")
+          .eq("classroom_id", input.roomId)
+          .eq("date", input.date)
+          .eq("period_id", input.period)
+          .limit(1);
 
-      if (existing && existing.length > 0) {
-        throw new TRPCError({ 
-          code: "FORBIDDEN", 
-          message: "ห้องเรียนนี้ได้มีการบันทึกการเช็คชื่อในระบบเรียบร้อยแล้ว และไม่อนุญาตให้บันทึกซ้ำตามนโยบายของระบบ" 
-        });
+        if (existing && existing.length > 0) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "ห้องเรียนนี้ได้มีการบันทึกการเช็คชื่อในระบบเรียบร้อยแล้ว และไม่อนุญาตให้บันทึกซ้ำตามนโยบายของระบบ"
+          });
+        }
       }
 
       try {
-        // Find teacher ID
+        // Find teacher info
         const { data: teacher, error: teacherError } = await ctx.supabase
           .from("teachers")
-          .select("id")
+          .select("id, name")
           .eq("username", input.teacher)
           .single();
-        
+
         if (teacherError || !teacher) {
           console.error("Teacher lookup error:", teacherError);
           throw new TRPCError({ code: "NOT_FOUND", message: `Teacher '${input.teacher}' not found` });
@@ -322,18 +328,18 @@ export const appRouter = router({
           const { data: config } = await ctx.supabase.from("school_config").select("line_channel_access_token, line_target_id, school_name").eq("id", 1).single();
           const { data: room } = await ctx.supabase.from("classrooms").select("name").eq("id", input.roomId).single();
           const { data: period } = await ctx.supabase.from("periods").select("name").eq("id", input.period).single();
-          
+
           if (config?.line_channel_access_token && config?.line_target_id) {
             const counts = { มา: 0, ขาด: 0, สาย: 0, ลา: 0, ป่วย: 0 };
             input.students.forEach(s => {
               if (s.status in counts) counts[s.status as keyof typeof counts]++;
             });
 
-            const thaiDate = new Date(input.date).toLocaleDateString('th-TH', { 
-              year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+            const thaiDate = new Date(input.date).toLocaleDateString('th-TH', {
+              year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
             });
 
-            const message = `รายงานการเข้าร่วมกิจกรรม ${period?.name || input.period}\nชั้น ${room?.name || input.roomId} ประจำ${thaiDate}\nมา: ${counts.มา}\nขาด: ${counts.ขาด}\nสาย: ${counts.สาย}\nลา: ${counts.ลา}\nป่วย: ${counts.ป่วย}\nผู้บันทึก: ${teacher.name}`;
+            const message = `🔔 รายงานการเข้าร่วม [${period?.name || input.period}]\n🏫 ชั้น ${room?.name || input.roomId} ประจำ${thaiDate}\n----------------------\n✅ มา: ${counts.มา}\n❌ ขาด: ${counts.ขาด}\n⏰ สาย: ${counts.สาย}\n👤 ลา: ${counts.ลา}\n💊 ป่วย: ${counts.ป่วย}\n----------------------\n📝 ผู้บันทึก: ${teacher.name}`;
 
             await fetch("https://api.line.me/v2/bot/message/push", {
               method: "POST",
@@ -355,7 +361,7 @@ export const appRouter = router({
         } catch (lineErr) {
           console.error("LINE Messaging API failed:", lineErr);
         }
-        
+
         return { success: true };
       } catch (err: any) {
         console.error("saveAttendance unexpected error:", err);
@@ -369,7 +375,7 @@ export const appRouter = router({
       .from("periods")
       .select("*")
       .eq("status", 1);
-    
+
     if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
     return data;
   }),
@@ -381,7 +387,7 @@ export const appRouter = router({
       .select("*")
       .eq("id", 1)
       .single();
-    
+
     if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
     return {
       schoolName: data.school_name,
@@ -420,7 +426,7 @@ export const appRouter = router({
           line_target_id: input.lineTargetId,
         })
         .eq("id", 1);
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       return { success: true };
     }),
@@ -510,14 +516,14 @@ export const appRouter = router({
         `)
         .gte("date", input.startDate)
         .lte("date", input.endDate);
-      
+
       if (input.roomId) {
         query = query.eq("classroom_id", input.roomId);
       }
 
       const { data, error } = await query;
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
-      
+
       // Group by date, period, and classroom_id
       const grouped: Record<string, any> = {};
       data.forEach(item => {
@@ -541,7 +547,7 @@ export const appRouter = router({
 
       return Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date));
     }),
-  
+
   getDailyOverview: protectedProcedure
     .input(z.object({ date: z.string(), period: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -551,7 +557,7 @@ export const appRouter = router({
         .select("*")
         .eq("status", 1)
         .order("name");
-      
+
       if (roomsError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: roomsError.message });
 
       // 2. Get all students
@@ -559,7 +565,7 @@ export const appRouter = router({
         .from("students")
         .select("*")
         .eq("status", 1);
-      
+
       if (studentsError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: studentsError.message });
 
       // 3. Get attendance for the date/period
@@ -568,17 +574,17 @@ export const appRouter = router({
         .select("*")
         .eq("date", input.date)
         .eq("period_id", input.period);
-      
+
       if (attError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: attError.message });
 
       // Calculate overview per classroom
       return classrooms.map(room => {
         const roomStudents = allStudents.filter(s => s.classroom_id === room.id);
         const roomAttendance = attendance.filter(a => a.classroom_id === room.id);
-        
+
         const hasData = roomAttendance.length > 0;
         const total = roomStudents.length;
-        
+
         const present = roomAttendance.filter(a => a.status_name === "มา").length;
         const absent = roomAttendance.filter(a => a.status_name === "ขาด").length;
         const late = roomAttendance.filter(a => a.status_name === "สาย").length;
@@ -603,7 +609,11 @@ export const appRouter = router({
     }),
 
   sendDailySummary: adminProcedure
-    .input(z.object({ date: z.string(), period: z.string().optional() }))
+    .input(z.object({ 
+      startDate: z.string(), 
+      endDate: z.string(), 
+      period: z.string().optional() 
+    }))
     .mutation(async ({ input, ctx }) => {
       try {
         // 1. Get Config
@@ -613,15 +623,13 @@ export const appRouter = router({
         }
 
         // 2. Get Data
-        const { data: attendance, error: attError } = await ctx.supabase
-          .from("attendance")
+        let query = ctx.supabase.from("attendance")
           .select("*")
-          .eq("date", input.date)
-          .filter(input.period ? "period_id" : "id", "is", input.period ? input.period : null);
+          .gte("date", input.startDate)
+          .lte("date", input.endDate);
         
-        // Wait, filter logic for optional period
-        let query = ctx.supabase.from("attendance").select("*").eq("date", input.date);
         if (input.period) query = query.eq("period_id", input.period);
+        
         const { data: attData, error: err } = await query;
         if (err) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
 
@@ -631,17 +639,32 @@ export const appRouter = router({
         });
 
         const total = Object.values(counts).reduce((a, b) => a + b, 0);
-        const thaiDate = new Date(input.date).toLocaleDateString('th-TH', { 
-          year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+        
+        const formatPercent = (count: number) => {
+          if (total === 0) return "0.00";
+          return ((count / total) * 100).toFixed(2);
+        };
+
+        const thaiStartDate = new Date(input.startDate).toLocaleDateString('th-TH', {
+          year: 'numeric', month: 'long', day: 'numeric'
+        });
+        const thaiEndDate = new Date(input.endDate).toLocaleDateString('th-TH', {
+          year: 'numeric', month: 'long', day: 'numeric'
         });
 
-        let periodName = "ภาพรวมทั้งวัน";
+        let periodName = "ภาพรวมทั้งหมด";
         if (input.period) {
           const { data: p } = await ctx.supabase.from("periods").select("name").eq("id", input.period).single();
           periodName = p?.name || input.period;
         }
 
-        const message = `\n📢 สรุปรายงานการเข้าร่วมกิจกรรม\n--------------------------\n📍 ${periodName}\n📅 ประจำ${thaiDate}\n\n✅ มาเรียน: ${counts.มา}\n❌ ขาดเรียน: ${counts.ขาด}\n⏰ มาสาย: ${counts.สาย}\n📝 ลากิจ: ${counts.ลา}\n🤒 ลาป่วย: ${counts.ป่วย}\n\n📊 รวมบันทึกแล้ว: ${total} รายการ\n--------------------------\nผู้รายงาน: นายธวัชชัย แก่นจักร์\nตำแหน่ง: ผู้ดูแลระบบ`;
+        const reporterName = (ctx.user as any)?.name || ctx.user?.username || "ผู้ดูแลระบบ";
+
+        const dateStr = input.startDate === input.endDate 
+          ? `ประจำวันที่ ${thaiStartDate}`
+          : `ระหว่างวันที่ ${thaiStartDate} ถึง ${thaiEndDate}`;
+
+        const message = `📢 สรุปรายงานการเข้าร่วม [${periodName}]\n--------------------------\n📅 ${dateStr}\n✅ มา: ${counts.มา}  คิดเป็น ${formatPercent(counts.มา)} %\n❌ ขาด: ${counts.ขาด}  คิดเป็น ${formatPercent(counts.ขาด)} %\n⏰ สาย: ${counts.สาย}  คิดเป็น ${formatPercent(counts.สาย)} %\n👤 ลา: ${counts.ลา}  คิดเป็น ${formatPercent(counts.ลา)} %\n💊 ป่วย: ${counts.ป่วย}  คิดเป็น ${formatPercent(counts.ป่วย)} %\n📊 รวมบันทึกแล้ว: ${total} รายการ\n--------------------------\nผู้รายงาน: ${reporterName}`;
 
         const response = await fetch("https://api.line.me/v2/bot/message/push", {
           method: "POST",
@@ -663,7 +686,7 @@ export const appRouter = router({
 
         return { success: true };
       } catch (err: any) {
-        if (err instanceof TRPCError) throw err;
+        console.error("sendDailySummary Error:", err);
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
       }
     }),
@@ -692,7 +715,7 @@ export const appRouter = router({
 
   updateTeacher: protectedProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.coerce.number(),
       name: z.string(),
       username: z.string(),
       password: z.string().optional(),
@@ -732,7 +755,7 @@ export const appRouter = router({
     }),
 
   deleteTeacher: adminProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.coerce.number() }))
     .mutation(async ({ input, ctx }) => {
       const { error } = await ctx.supabase
         .from("teachers")
@@ -776,7 +799,7 @@ export const appRouter = router({
 
   updateStudent: adminProcedure
     .input(z.object({
-      id: z.number(),
+      id: z.coerce.number(),
       studentId: z.string(),
       classroomId: z.string(),
       no: z.number(),
@@ -797,7 +820,7 @@ export const appRouter = router({
     }),
 
   deleteStudent: adminProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.coerce.number() }))
     .mutation(async ({ input, ctx }) => {
       const { error } = await ctx.supabase
         .from("students")
@@ -824,11 +847,11 @@ export const appRouter = router({
         name: s.name,
         status: 1,
       }));
-      
+
       const { error } = await ctx.supabase
         .from("students")
         .upsert(records, { onConflict: 'student_id' });
-        
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       return { success: true, count: records.length };
     }),
@@ -852,7 +875,7 @@ export const appRouter = router({
         .eq("id", input.id)
         .limit(1)
         .single();
-      
+
       if (getError || !original) throw new TRPCError({ code: "NOT_FOUND", message: "Record not found" });
 
       // 2. Find teacher ID
@@ -861,7 +884,7 @@ export const appRouter = router({
         .select("id")
         .eq("username", input.teacher)
         .single();
-      
+
       if (teacherError || !teacher) throw new TRPCError({ code: "NOT_FOUND", message: "Teacher not found" });
 
       // 3. Update entries
@@ -894,7 +917,7 @@ export const appRouter = router({
         .select("date, period_id, classroom_id")
         .eq("id", input.id)
         .single();
-      
+
       if (getError || !record) throw new TRPCError({ code: "NOT_FOUND", message: "Record not found" });
 
       const { error } = await ctx.supabase
@@ -903,7 +926,7 @@ export const appRouter = router({
         .eq("date", record.date)
         .eq("period_id", record.period_id)
         .eq("classroom_id", record.classroom_id);
-      
+
       if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
       return { success: true };
     }),

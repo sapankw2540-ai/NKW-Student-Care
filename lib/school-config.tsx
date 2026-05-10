@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: SchoolConfig = {
   province: 'จังหวัดศรีสะเกษ',
   semester: '1',
   academicYear: '2569',
-  version: 'v4.5.9',
+  version: 'v4.5.10',
   developerName: 'นายธวัชชัย แก่นจักร์ ครู โรงเรียนน้ำคำวิทยา',
   themeColor: 'orange',
   lineChannelAccessToken: '',

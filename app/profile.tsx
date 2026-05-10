@@ -6,15 +6,17 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
-  Alert,
   Switch,
   ActivityIndicator,
   Platform,
+  Modal,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { AppHeader } from "@/components/app-header";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTeacherAuth } from "@/lib/teacher-auth";
+import { useSchoolConfig } from "@/lib/school-config";
+
 import { formatClassroomId } from "@/lib/thai-date";
 import { trpc } from "@/lib/trpc";
 import { TimePickerModal } from "@/components/time-picker-modal";
@@ -24,14 +26,70 @@ import {
   getScheduledReminders,
   requestNotificationPermission,
 } from "@/lib/notifications";
+import { useAppAlert } from "@/components/app-alert-provider";
 
 export default function ProfileScreen() {
   const { teacher, setTeacher, logout } = useTeacherAuth();
+  const { config } = useSchoolConfig();
+
+  const appAlert = useAppAlert();
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [notifyTime, setNotifyTime] = useState(teacher?.notifyTime ?? "07:30");
   const [loadingNotify, setLoadingNotify] = useState(false);
   const [checkingReminders, setCheckingReminders] = useState(true);
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Change password state
+  const [passModalVisible, setPassModalVisible] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPass, setIsChangingPass] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      appAlert.show({ title: "ข้อมูลไม่ครบ", message: "กรุณากรอกรหัสผ่านใหม่ให้ครบถ้วน", type: "info" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      appAlert.show({ title: "รหัสผ่านไม่ตรงกัน", message: "รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน", type: "error" });
+      return;
+    }
+    if (newPassword.length < 6) {
+      appAlert.show({ title: "รหัสผ่านสั้นเกินไป", message: "รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร", type: "info" });
+      return;
+    }
+
+    setIsChangingPass(true);
+    try {
+      if (teacher) {
+        await updateTeacherMutation.mutateAsync({
+          id: teacher.id,
+          name: teacher.name,
+          username: teacher.username,
+          role: teacher.role,
+          classroomIds: teacher.classroomIds || "",
+          notifyTime: teacher.notifyTime,
+          password: newPassword,
+        });
+        
+        appAlert.show({ 
+          title: "สำเร็จ", 
+          message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว", 
+          type: "success",
+          autoCloseMs: 3000,
+          onDismiss: () => {
+            setPassModalVisible(false);
+            setNewPassword("");
+            setConfirmPassword("");
+          }
+        });
+      }
+    } catch (error: any) {
+      appAlert.show({ title: "ล้มเหลว", message: error.message || "ไม่สามารถเปลี่ยนรหัสผ่านได้", type: "error" });
+    } finally {
+      setIsChangingPass(false);
+    }
+  };
 
   // Check if reminder is already scheduled
   useEffect(() => {
@@ -51,6 +109,7 @@ export default function ProfileScreen() {
         setTeacher({
           ...teacher,
           notifyTime: vars.notifyTime ?? teacher.notifyTime,
+          token: teacher.token,
         });
       }
     },
@@ -58,7 +117,7 @@ export default function ProfileScreen() {
 
   const handleToggleNotify = async (val: boolean) => {
     if (Platform.OS === "web") {
-      Alert.alert("แจ้งเตือน", "การแจ้งเตือนไม่รองรับบนเว็บ กรุณาใช้แอพบนมือถือ");
+      appAlert.show({ title: "แจ้งเตือน", message: "การแจ้งเตือนไม่รองรับบนเว็บ กรุณาใช้แอพบนมือถือ", type: "info" });
       return;
     }
     setLoadingNotify(true);
@@ -66,7 +125,7 @@ export default function ProfileScreen() {
       if (val) {
         const granted = await requestNotificationPermission();
         if (!granted) {
-          Alert.alert("ไม่ได้รับอนุญาต", "กรุณาเปิดสิทธิ์การแจ้งเตือนในการตั้งค่าของอุปกรณ์");
+          appAlert.show({ title: "ไม่ได้รับอนุญาต", message: "กรุณาเปิดสิทธิ์การแจ้งเตือนในการตั้งค่าของอุปกรณ์", type: "error" });
           setLoadingNotify(false);
           return;
         }
@@ -74,7 +133,7 @@ export default function ProfileScreen() {
         const id = await scheduleDailyAttendanceReminder(h, m);
         if (id) {
           setNotifyEnabled(true);
-          Alert.alert("เปิดการแจ้งเตือนแล้ว", `จะแจ้งเตือนทุกวันเวลา ${notifyTime} น.`);
+          appAlert.show({ title: "เปิดการแจ้งเตือนแล้ว", message: `จะแจ้งเตือนทุกวันเวลา ${notifyTime} น.`, type: "success", autoCloseMs: 2500 });
           // Save notify time to server
           if (teacher) {
             await updateTeacherMutation.mutateAsync({
@@ -90,10 +149,10 @@ export default function ProfileScreen() {
       } else {
         await cancelAttendanceReminders();
         setNotifyEnabled(false);
-        Alert.alert("ปิดการแจ้งเตือนแล้ว");
+        appAlert.show({ title: "ปิดการแจ้งเตือนแล้ว", message: "ปิดการแจ้งเตือนเรียบร้อยแล้ว", type: "info", autoCloseMs: 2000 });
       }
     } catch (error) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถตั้งค่าการแจ้งเตือนได้");
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถตั้งค่าการแจ้งเตือนได้นะครับ", type: "error" });
     }
     setLoadingNotify(false);
   };
@@ -101,7 +160,7 @@ export default function ProfileScreen() {
   const handleUpdateNotifyTime = async (newTime?: string) => {
     const timeToSave = typeof newTime === "string" ? newTime : notifyTime;
     if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeToSave)) {
-      Alert.alert("รูปแบบเวลาไม่ถูกต้อง", "กรุณาใช้รูปแบบ HH:MM");
+      appAlert.show({ title: "รูปแบบเวลาไม่ถูกต้อง", message: "กรุณาใช้รูปแบบ HH:MM", type: "error" });
       return;
     }
     
@@ -125,29 +184,27 @@ export default function ProfileScreen() {
         }
         
         setNotifyTime(timeToSave);
-        Alert.alert("สำเร็จ", "อัปเดตเวลาแจ้งเตือนเรียบร้อยแล้ว");
+        appAlert.show({ title: "สำเร็จ", message: "อัปเดตเวลาแจ้งเตือนเรียบร้อยแล้ว", type: "success", autoCloseMs: 2000 });
       }
     } catch (error) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอัปเดตเวลาได้");
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถอัปเดตเวลาได้", type: "error" });
     } finally {
       setLoadingNotify(false);
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert("ออกจากระบบ", "ต้องการออกจากระบบหรือไม่?", [
-      { text: "ยกเลิก", style: "cancel" },
-      {
-        text: "ออกจากระบบ",
-        style: "destructive",
-        onPress: async () => {
-          if (notifyEnabled && Platform.OS !== "web") {
-            await cancelAttendanceReminders();
-          }
-          await logout();
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    const ok = await appAlert.confirm({
+      title: "ออกจากระบบ",
+      message: "ต้องการออกจากระบบหรือไม่?",
+      danger: true,
+      confirmLabel: "ออกจากระบบ",
+    });
+    if (!ok) return;
+    if (notifyEnabled && Platform.OS !== "web") {
+      await cancelAttendanceReminders();
+    }
+    await logout();
   };
 
   return (
@@ -226,6 +283,25 @@ export default function ProfileScreen() {
             )}
           </View>
 
+          {/* Security / Password */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>ความปลอดภัย</Text>
+            <TouchableOpacity 
+              style={styles.settingRow} 
+              onPress={() => setPassModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingInfo}>
+                <IconSymbol name="lock.fill" size={18} color="#F97316" />
+                <View>
+                  <Text style={styles.settingLabel}>เปลี่ยนรหัสผ่าน</Text>
+                  <Text style={styles.settingDesc}>เปลี่ยนรหัสผ่านสำหรับการเข้าสู่ระบบ</Text>
+                </View>
+              </View>
+              <IconSymbol name="chevron.right" size={16} color="#A8A29E" />
+            </TouchableOpacity>
+          </View>
+
           {/* App Info */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>เกี่ยวกับแอพ</Text>
@@ -235,8 +311,9 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>เวอร์ชัน</Text>
-              <Text style={styles.infoValue}>4.0.0</Text>
+              <Text style={styles.infoValue}>{config.version}</Text>
             </View>
+
           </View>
 
           {/* Logout */}
@@ -255,12 +332,77 @@ export default function ProfileScreen() {
           }}
         />
       </ScreenContainer>
+
+      {/* Change Password Modal - Using View instead of Modal to allow AppAlert to overlap on top */}
+      {passModalVisible && (
+        <View style={styles.absoluteOverlay}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>เปลี่ยนรหัสผ่านใหม่(อย่างน้อย 6 ตัว)</Text>
+              
+              <View style={styles.formField}>
+                <Text style={styles.inputLabel}>รหัสผ่านใหม่</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  secureTextEntry
+                  placeholder="รหัสผ่านใหม่"
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={styles.inputLabel}>ยืนยันรหัสผ่านใหม่</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  secureTextEntry
+                  placeholder="ยืนยันรหัสผ่านใหม่"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setPassModalVisible(false)}>
+                  <Text style={styles.cancelBtnText}>ยกเลิก</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.submitBtn, { backgroundColor: "#F97316" }]} 
+                  onPress={handleChangePassword}
+                  disabled={isChangingPass}
+                >
+                  {isChangingPass ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>บันทึก</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
+  absoluteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
+  modalContent: { backgroundColor: "#FFF", borderRadius: 24, padding: 24, gap: 16 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: "#1C1917", textAlign: "center", marginBottom: 8 },
+  formField: { gap: 8 },
+  inputLabel: { fontSize: 14, fontWeight: "600", color: "#44403C" },
+  modalInput: { backgroundColor: "#F5F5F4", borderRadius: 12, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: "#E7E5E4", fontSize: 16 },
+  modalActions: { flexDirection: "row", gap: 12, marginTop: 16 },
+  cancelBtn: { flex: 1, height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F5F4" },
+  cancelBtnText: { color: "#78716C", fontWeight: "700" },
+  submitBtn: { flex: 2, height: 50, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  submitBtnText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
   scrollContent: { padding: 16, paddingBottom: 40 },
   profileCard: {
     backgroundColor: "#FFF7ED",

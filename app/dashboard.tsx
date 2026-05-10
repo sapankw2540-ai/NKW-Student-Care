@@ -7,16 +7,20 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { AppHeader } from "@/components/app-header";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { trpc } from "@/lib/trpc";
 import { useTeacherAuth } from "@/lib/teacher-auth";
+import { usePeriod } from "@/lib/period-context";
+
 import { formatDateForApi, toThaiDateWithDay, formatClassroomId } from "@/lib/thai-date";
 import { DatePickerModal } from "@/components/date-picker-modal";
 import { generateHistoryReportHtml, exportPdfAndShare } from "@/lib/pdf-export";
+import { useAppAlert } from "@/components/app-alert-provider";
+import { useSchoolConfig } from "@/lib/school-config";
+import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 
 const STATUS_COLORS = {
   present: { label: "มา", color: "#16A34A", bg: "#DCFCE7" },
@@ -26,31 +30,42 @@ const STATUS_COLORS = {
   sick: { label: "ป่วย", color: "#9333EA", bg: "#F3E8FF" },
 };
 
-function RateBar({ rate }: { rate: number | null }) {
-  if (rate === null) return null;
-  const color = rate >= 90 ? "#16A34A" : rate >= 75 ? "#CA8A04" : "#DC2626";
-  return (
-    <View style={styles.rateBarContainer}>
-      <View style={[styles.rateBarFill, { width: `${rate}%` as any, backgroundColor: color }]} />
-      <Text style={[styles.rateText, { color }]}>{rate}%</Text>
-    </View>
-  );
-}
+
 
 export default function DashboardScreen() {
   const { teacher } = useTeacherAuth();
-  const [selectedDate, setSelectedDate] = useState(formatDateForApi(new Date()));
-  const [selectedPeriod, setSelectedPeriod] = useState("morning");
+  const { config } = useSchoolConfig();
+  const { selectedDate, setSelectedDate, selectedPeriod, setIsPageLoading } = usePeriod();
+  const palette = getThemePalette(config.themeColor);
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
+  const RateBar = ({ rate }: { rate: number | null }) => {
+    if (rate === null) return null;
+    const color = rate >= 90 ? "#16A34A" : rate >= 75 ? "#CA8A04" : "#DC2626";
+    return (
+      <View style={styles.rateBarContainer}>
+        <View style={[styles.rateBarFill, { width: `${rate}%` as any, backgroundColor: color }]} />
+        <Text style={[styles.rateText, { color }]}>{rate}%</Text>
+      </View>
+    );
+  };
+
+
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: periods = [] } = trpc.periods.useQuery();
-  const activePeriods = periods.filter((p) => p.status === 1);
 
   const { data: overview = [], isLoading, refetch } = trpc.getDailyOverview.useQuery(
-    { date: selectedDate, period: selectedPeriod },
+    { date: selectedDate, period: selectedPeriod || "" },
     { enabled: !!selectedDate && !!selectedPeriod }
   );
+
+  // Sync loading state to global period context
+  React.useEffect(() => {
+    setIsPageLoading(isLoading);
+  }, [isLoading, setIsPageLoading]);
+
 
   // Filter by teacher's classrooms if not admin
   const allowedRooms = teacher?.role !== "admin" && teacher?.classroomIds
@@ -85,7 +100,7 @@ export default function DashboardScreen() {
   const handleExportAll = async () => {
     if (visibleOverview.length === 0) return;
     try {
-      const periodName = activePeriods.find((p) => p.id === selectedPeriod)?.name ?? selectedPeriod;
+      const periodName = periods.find((p) => p.id === selectedPeriod)?.name ?? selectedPeriod;
       const rows = visibleOverview.map((o) => ({
         date: formatClassroomId(o.classroomName),
         period: periodName,
@@ -105,7 +120,8 @@ export default function DashboardScreen() {
       });
       await exportPdfAndShare(html, `ภาพรวม_${selectedDate}_${periodName}.pdf`);
     } catch {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถสร้าง PDF ได้");
+      // @ts-ignore
+      appAlert.show({ title: "เกิดข้อผิดพลาด", message: "ไม่สามารถสร้าง PDF ได้", type: "error" });
     }
   };
 
@@ -113,32 +129,19 @@ export default function DashboardScreen() {
     <View style={styles.container}>
       <AppHeader title="Dashboard" />
       <ScreenContainer edges={[]} className="flex-1">
-        {/* Filter Bar */}
+        {/* Filters */}
         <View style={styles.filterBar}>
           <TouchableOpacity
-            style={styles.dateBtn}
+            style={styles.dateRow}
             onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <IconSymbol name="calendar" size={16} color="#F97316" />
-            <Text style={styles.dateBtnText}>
-              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))}
+            <IconSymbol name="calendar" size={16} color={palette.primary} />
+            <Text style={styles.dateText}>
+              {toThaiDateWithDay(new Date(selectedDate + "T00:00:00"))} • {periods.find(p => p.id === selectedPeriod)?.name ?? selectedPeriod}
             </Text>
+            <IconSymbol name="chevron.down" size={14} color="#78716C" />
           </TouchableOpacity>
-          <View style={styles.periodRow}>
-            {activePeriods.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.periodBtn, selectedPeriod === p.id && styles.periodBtnActive]}
-                onPress={() => setSelectedPeriod(p.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.periodBtnText, selectedPeriod === p.id && styles.periodBtnTextActive]}>
-                  {p.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         {isLoading ? (
@@ -273,16 +276,29 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
-  filterBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 8, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-  dateBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FFF7ED", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, alignSelf: "flex-start" },
-  dateBtnText: { fontSize: 13, fontWeight: "600", color: "#1C1917" },
-  periodRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  periodBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: "#F3F4F6" },
-  periodBtnActive: { backgroundColor: "#F97316" },
-  periodBtnText: { fontSize: 12, fontWeight: "600", color: "#78716C" },
-  periodBtnTextActive: { color: "#FFFFFF" },
+  filterBar: { 
+    paddingHorizontal: 16, 
+    paddingTop: 12, 
+    paddingBottom: 8, 
+    backgroundColor: "#FFFFFF", 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#E7E5E4" 
+  },
+  dateRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    backgroundColor: palette.surface, 
+    paddingHorizontal: 12, 
+    paddingVertical: 10, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: palette.primary + "40", // 25% opacity
+    alignSelf: "flex-start" 
+  },
+  dateText: { fontSize: 13, fontWeight: "600", color: "#1C1917" },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   scrollContent: { padding: 16, gap: 12, paddingBottom: 32 },
   overallCard: { backgroundColor: "#1C1917", borderRadius: 16, padding: 16, gap: 12 },
@@ -290,7 +306,7 @@ const styles = StyleSheet.create({
   overallTitle: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
   overallSub: { fontSize: 12, color: "#A8A29E", marginTop: 2 },
   exportBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#292524", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  exportBtnText: { fontSize: 12, fontWeight: "600", color: "#F97316" },
+  exportBtnText: { fontSize: 12, fontWeight: "600", color: palette.primary },
   overallStats: { flexDirection: "row", gap: 6 },
   overallStatItem: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 10 },
   overallStatCount: { fontSize: 18, fontWeight: "700" },
@@ -307,7 +323,7 @@ const styles = StyleSheet.create({
   classNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   className: { fontSize: 15, fontWeight: "700", color: "#1C1917" },
   classNameEmpty: { color: "#A8A29E" },
-  rateChip: { backgroundColor: "#FFF7ED", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  rateChip: { backgroundColor: palette.surface, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   rateChipText: { fontSize: 12, fontWeight: "700" },
   noDataChip: { backgroundColor: "#F3F4F6", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   noDataChipText: { fontSize: 11, color: "#A8A29E", fontWeight: "600" },
