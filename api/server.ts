@@ -3,9 +3,6 @@ import cors from "cors";
 import * as trpcExpress from "@trpc/server/adapters/express";
 import { createContext } from "../server/_core/context";
 import { appRouter } from "../server/routers/index";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
 
@@ -21,11 +18,21 @@ app.use(
   trpcExpress.createExpressMiddleware({
     router: appRouter,
     createContext,
+    onError({ error, path }) {
+      console.error(`❌ tRPC Error on ${path}:`, error);
+    },
   })
 );
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    env: {
+      hasUrl: !!process.env.SUPABASE_URL,
+      hasKey: !!process.env.SUPABASE_ANON_KEY
+    }
+  });
 });
 
 export default app;
