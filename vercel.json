@@ -1,6 +1,7 @@
 {
   "version": 2,
   "public": true,
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/api/trpc/:path*",
