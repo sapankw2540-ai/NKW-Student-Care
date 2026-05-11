@@ -90,7 +90,10 @@ export default function LoginScreen() {
   const handleLogin = () => {
     // 1. เรียกขอสิทธิ์การแจ้งเตือนทันทีเมื่อมีการคลิก (User Gesture)
     // เพื่อป้องกันการถูก Block จาก Browser Anti-Spam Policy
-    requestNotificationPermission().catch(() => {});
+    // ปิดคำขอเข้าถึงการแจ้งเตือนและอุปกรณ์เมื่อใช้งานผ่านเว็บ
+    if (Platform.OS !== "web") {
+      requestNotificationPermission().catch(() => {});
+    }
 
     setLoginError(null);
     if (!username.trim() || !password.trim()) {

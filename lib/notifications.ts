@@ -14,6 +14,11 @@ Notifications.setNotificationHandler({
 });
 
 export async function requestNotificationPermission(): Promise<boolean> {
+  // ไม่ขอสิทธิ์การแจ้งเตือนบนเว็บตามความต้องการของผู้ใช้ (ทำงานเฉพาะบนแอปพลิเคชัน)
+  if (Platform.OS === "web") {
+    return false;
+  }
+
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("attendance", {
       name: "เช็คชื่อหน้าเสาธง",
