@@ -1,12 +1,14 @@
 # Project TODO - ระบบเช็คและติดตามนักเรียนเข้าร่วมกิจกรรมหน้าเสาธง
 
 ## Setup & Configuration
+
 - [x] ปรับธีมสีขาว-ส้ม-ดำ ใน theme.config.js
 - [x] สร้างโลโก้แอพ (student attendance icon)
 - [x] อัปเดต app.config.ts ชื่อแอพ: เช็คชื่อหน้าเสาธง
 - [x] ตั้งค่า Backend API และ Database schema
 
 ## Database & Backend
+
 - [x] สร้าง Database schema (teachers, students, classrooms, attendance, periods, statuslist, config)
 - [x] นำเข้าข้อมูลจาก Excel (Students, Classrooms, Periods, StatusList, Config, Teachers)
 - [x] สร้าง API: teacherLogin
@@ -22,6 +24,7 @@
 - [x] เพิ่ม role และ notifyTime ใน teachers table
 
 ## Screens
+
 - [x] LoginScreen - หน้าเข้าสู่ระบบ
 - [x] AttendanceScreen - ฟอร์มเช็คชื่อนักเรียน (Tab 1) + DatePicker + ค้นหา + หมายเหตุ
 - [x] ClassroomSummaryScreen - สรุปตามห้องเรียน (Tab 2)
@@ -31,12 +34,14 @@
 - [x] ProfileScreen - โปรไฟล์ + ตั้งค่าแจ้งเตือน + ออกจากระบบ (Tab 6)
 
 ## Components
+
 - [x] AppHeader - Header component พร้อมชื่อระบบ
 - [x] DatePickerModal - เลือกวันที่ย้อนหลัง
 - [x] PeriodSelector - ปุ่มเลือกช่วงเวลา (เช้า/บ่าย)
 - [x] StatusBadge - แสดงสถานะ (มา/ขาด/สาย/ลา/ป่วย)
 
 ## Features
+
 - [x] ระบบ Login/Logout พร้อม session (AsyncStorage)
 - [x] เช็คชื่อนักเรียนรายห้อง (บันทึก/แก้ไข)
 - [x] เลือกวันที่ย้อนหลัง (DatePickerModal)

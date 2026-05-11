@@ -1,5 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
 // Set notification handler to show alerts in foreground
 Notifications.setNotificationHandler({
@@ -25,6 +26,25 @@ export async function requestNotificationPermission(): Promise<boolean> {
   if (existingStatus === "granted") return true;
   const { status } = await Notifications.requestPermissionsAsync();
   return status === "granted";
+}
+
+export async function registerForPushNotificationsAsync(): Promise<string | null> {
+  try {
+    const granted = await requestNotificationPermission();
+    if (!granted) return null;
+
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId || "nkw-student-care-dev";
+    
+    // Attempt to get the push token
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId,
+    });
+    
+    return tokenData.data;
+  } catch (error) {
+    console.error("Failed to get push token:", error);
+    return null;
+  }
 }
 
 export async function scheduleDailyAttendanceReminder(

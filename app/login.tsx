@@ -19,6 +19,7 @@ import { useSchoolConfig } from "@/lib/school-config";
 import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
+import { registerForPushNotificationsAsync } from "@/lib/notifications";
 
 const REMEMBER_ME_KEY = "remembered_teacher_credentials";
 
@@ -37,6 +38,7 @@ export default function LoginScreen() {
   const palette = getThemePalette(config.themeColor);
   const styles = useMemo(() => createStyles(palette), [palette]);
   const { setTeacher } = useTeacherAuth();
+  const pushTokenMutation = trpc.updatePushToken.useMutation();
 
   // Load remembered credentials on mount
   useEffect(() => {
@@ -67,6 +69,16 @@ export default function LoginScreen() {
         await AsyncStorage.removeItem(REMEMBER_ME_KEY);
       }
       await setTeacher({ ...data.teacher, token: data.token });
+      
+      // Register for push notifications
+      try {
+        const token = await registerForPushNotificationsAsync();
+        if (token) {
+          pushTokenMutation.mutate({ token });
+        }
+      } catch (err) {
+        console.error("Push token error", err);
+      }
     },
     onError: (error) => {
       setLoadingStatus("idle");

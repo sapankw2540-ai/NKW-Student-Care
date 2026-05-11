@@ -114,6 +114,18 @@ export const appRouter = router({
       })).sort((a, b) => b.count - a.count);
     }),
 
+  updatePushToken: protectedProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { error } = await ctx.supabase
+        .from("teachers")
+        .update({ push_token: input.token })
+        .eq("id", ctx.user.id);
+        
+      if (error) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+      return { success: true };
+    }),
+
   // Auth Routers
   teacherLogin: publicProcedure
     .input(z.object({ username: z.string().min(1), password: z.string().min(1) }))
@@ -358,8 +370,39 @@ export const appRouter = router({
               }),
             });
           }
+          
+          // --- Expo Push Notification ---
+          const { data: admins } = await ctx.supabase
+            .from("teachers")
+            .select("push_token")
+            .eq("role", "admin")
+            .not("push_token", "is", null);
+
+          if (admins && admins.length > 0) {
+            const pushTokens = admins.map(a => a.push_token).filter(Boolean);
+            if (pushTokens.length > 0) {
+              const pushMessage = `มีการเช็คชื่อห้อง ${room?.name || input.roomId} แล้ว โดย ${teacher.name}`;
+              await fetch("https://exp.host/--/api/v2/push/send", {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  "Accept-encoding": "gzip, deflate",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(
+                  pushTokens.map(token => ({
+                    to: token,
+                    sound: "default",
+                    title: "NKW Student Care",
+                    body: pushMessage,
+                    data: { roomId: input.roomId, period: input.period },
+                  }))
+                ),
+              });
+            }
+          }
         } catch (lineErr) {
-          console.error("LINE Messaging API failed:", lineErr);
+          console.error("Messaging API / Push Notification failed:", lineErr);
         }
 
         return { success: true };
@@ -544,7 +587,6 @@ export const appRouter = router({
           status: item.status_name,
           reason: item.notes,
           classroom_name: (item as any).classrooms?.name || "ไม่ทราบห้อง"
-        });
         });
       });
 

@@ -13,6 +13,13 @@
 
 ## 📈 Development Progress (Log)
 
+### 2026-05-11
+- **Expo Push Notifications (v4.5.11)**:
+    - [x] เพิ่มคอลัมน์ `push_token` ในฐานข้อมูลตาราง `teachers` เพื่อรองรับการส่งแจ้งเตือนรายบุคคล
+    - [x] อัปเดตฝั่ง Client (`app/login.tsx`, `lib/notifications.ts`) ให้ขอสิทธิ์และลงทะเบียน Expo Push Token โดยอัตโนมัติเมื่อเข้าสู่ระบบสำเร็จ
+    - [x] ปรับปรุง API `saveAttendance` ให้ส่ง Push Notification เข้ามือถือ/เว็บของ Admin ทันทีเมื่อมีการเช็คชื่อห้องเรียนเสร็จสิ้น
+    - [x] เพิ่ม API endpoint `updatePushToken` สำหรับให้แอปพลิเคชันบันทึก token ล่าสุดของผู้ใช้
+
 ### 2026-05-10
 - **Bug Fixes (Session & Display)**:
     - [x] **v4.5.10**: แก้ไขปัญหา "รายชื่อนักเรียนไม่แสดง" โดยปรับปรุงการเก็บ Session Token ใน AsyncStorage ให้ถูกต้อง
@@ -64,19 +71,19 @@
 
 ---
 
-## 🚀 Current Status: Stable (v4.5.10)
+## 🚀 Current Status: Stable (v4.5.11)
 - [x] ระบบ Login (Teacher/Admin)
 - [x] หน้าเช็คชื่อ (Morning/Noon/Evening)
 - [x] Dashboard สรุปภาพรวม
 - [x] สรุปรายห้องเรียน
 - [x] ประวัติการเช็คชื่อย้อนหลัง
 - [x] ระบบจัดการข้อมูล (Admin Panel)
+- [x] ระบบแจ้งเตือน (LINE Messaging API & Expo Push Notifications)
 
 ---
 
 ## 📋 Next Steps
-4. **Notifications**: ตรวจสอบและพัฒนา Web Push Notifications หรือแจ้งเตือนผ่านช่องทางอื่น (เช่น Line Notify)
-5. **System Audit**: ทดสอบการใช้งานจริง (UAT) และเก็บ Feedback เพื่อปรับปรุงระบบให้สมบูรณ์ยิ่งขึ้น
+1. **System Audit**: ทดสอบการใช้งานจริง (UAT) และเก็บ Feedback เพื่อปรับปรุงระบบให้สมบูรณ์ยิ่งขึ้น
 
 ---
 
