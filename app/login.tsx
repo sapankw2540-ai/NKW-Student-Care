@@ -19,7 +19,7 @@ import { useSchoolConfig } from "@/lib/school-config";
 import { getThemePalette, ThemePalette } from "@/constants/theme-palettes";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LoadingModal, LoadingStatus } from "@/components/loading-modal";
-import { registerForPushNotificationsAsync } from "@/lib/notifications";
+import { registerForPushNotificationsAsync, requestNotificationPermission } from "@/lib/notifications";
 
 const REMEMBER_ME_KEY = "remembered_teacher_credentials";
 
@@ -70,7 +70,7 @@ export default function LoginScreen() {
       }
       await setTeacher({ ...data.teacher, token: data.token });
       
-      // Register for push notifications
+      // Register for push notifications (Permission was already requested on button click)
       try {
         const token = await registerForPushNotificationsAsync();
         if (token) {
@@ -88,6 +88,10 @@ export default function LoginScreen() {
   });
 
   const handleLogin = () => {
+    // 1. เรียกขอสิทธิ์การแจ้งเตือนทันทีเมื่อมีการคลิก (User Gesture)
+    // เพื่อป้องกันการถูก Block จาก Browser Anti-Spam Policy
+    requestNotificationPermission().catch(() => {});
+
     setLoginError(null);
     if (!username.trim() || !password.trim()) {
       setLoginError("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
